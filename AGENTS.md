@@ -44,16 +44,21 @@
 /root/MyProj/MappingNetwork
 ├── mapping_network/           # 主包
 │   ├── target_nets/           # 目标网络实现
-│   │   ├── base.py            # TargetNet 基类（functional_forward 接口）
+│   │   ├── base.py            # TargetNet 基类（functional_forward + LRD 支持）
 │   │   ├── cnn1.py            # CNN1
 │   │   ├── cnn1_3conv.py      # CNN1 三卷积实验版
-│   │   └── cnn2.py            # CNN2
+│   │   ├── cnn2.py            # CNN2
+│   │   └── lrd_config.py      # LRDConfig 配置 dataclass
+│   ├── generators/            # 参数生成网络
+│   │   ├── base.py            # ParameterGenerator 抽象基类
+│   │   └── linear.py          # LinearMappingNetwork
 │   ├── mapping/               # Mapping Network 核心
-│   │   ├── mapping_net.py     # MappingNetwork：固定正交权重 + z 调制生成参数
 │   │   └── loss.py            # MappingLoss：任务/稳定/光滑/对齐损失
 │   ├── trainer/               # 训练器
 │   │   ├── slvt.py            # SLVT 训练器
-│   │   └── lwt.py             # LWT 训练器
+│   │   ├── lwt.py             # LWT 训练器
+│   │   └── optim_utils.py     # 优化器/调度器工厂
+│   ├── factory.py             # build_target_net / build_generator 工厂
 │   └── scripts/               # 命令行入口
 │       ├── train.py           # 统一训练入口（读取 YAML 配置）
 │       ├── train_baseline.py  # 基线目标网络训练
@@ -69,11 +74,15 @@
 │   └── cnn2_lwt.yaml
 ├── tests/                     # pytest 测试
 │   ├── conftest.py            # 全局 device fixture
-│   ├── test_loss.py
-│   ├── test_lwt.py
-│   ├── test_mapping_net.py
-│   ├── test_slvt.py
-│   └── test_target_nets.py
+│   ├── test_checkpoint.py     # checkpoint 重建测试
+│   ├── test_configs.py        # 全配置冒烟测试
+│   ├── test_factory.py        # 工厂函数测试
+│   ├── test_generators.py     # 参数生成网络测试
+│   ├── test_loss.py           # MappingLoss 测试
+│   ├── test_lrd_config.py     # LRDConfig 测试
+│   ├── test_lwt.py            # LWT 训练器测试
+│   ├── test_slvt.py           # SLVT 训练器测试
+│   └── test_target_nets.py    # 目标网络测试
 ├── checkpoints/               # 训练产物（.pth + .json），默认不提交
 ├── data/                      # MNIST 数据集下载目录，默认不提交
 ├── docs/superpowers/          # 开发计划与设计文档
@@ -91,18 +100,23 @@
 - 所有目标网络继承自 `mapping_network.target_nets.base.TargetNet`。
 - 提供两套前向接口：
   - `forward(x)`：标准模块前向，用于基线训练。
-  - `functional_forward(x, theta_hat)`：从 `theta_hat` 切片 reshape 出权重，使用 `F.conv2d` / `F.linear` 做函数式前向。
+  - `functional_forward(x, theta_hat)`：从 `theta_hat` 切片 reshape 出权重，使用 `F.conv2d` / `F.linear` 做函数式前向；支持 LRD 时自动重组 `U @ V.T`。
 - **关键约束**：禁止使用 `.data.copy_()` 注入参数，必须通过函数式前向保持 `theta_hat → z` 的梯度链完整。
 - 子类需在 `__init__` 末尾调用 `self._build_param_slices()`，以建立参数切分映射表。
+- 支持 LRD（Low-Rank Decomposition）：对 `nn.Linear` 大权重自动拆分为 `U @ V.T`，由 `LRDConfig` 控制。
 
-### 4.2 MappingNetwork
+### 4.2 参数生成网络（ParameterGenerator）
 
-- 固定权重 `W_fixed`（正交初始化）与偏置 `b_fixed` 注册为 buffer，`requires_grad=False`。
-- 唯一可训练参数是 `z`（`nn.Parameter`）。
-- 前向公式：
-  - `W_mod = W_fixed + alpha * z`
-  - `theta_hat = tanh(W_mod @ z + b_fixed)`
-- 输出 `theta_hat` 形状为 `[P]`，其中 `P` 是目标网络总参数个数。
+- 抽象基类位于 `mapping_network.generators.base.ParameterGenerator`。
+- 子类必须实现：
+  - `forward()`：返回 `theta_hat [P]`。
+  - `noisy_forward(sigma)`：返回加噪后的 `theta_noisy [P]`，用于 `L_stab`。
+  - `smooth_loss()`：返回 `L_smooth`。
+  - `align_loss()`：返回 `L_align`。
+- 当前实现：`LinearMappingNetwork`（`mapping_network.generators.linear`）。
+  - 固定权重 `W_fixed`（正交初始化）与偏置 `b_fixed` 注册为 buffer，`requires_grad=False`。
+  - 唯一可训练参数是 `z`（`nn.Parameter`）。
+  - 前向公式：`theta_hat = tanh(W_fixed @ z + alpha * ||z||² + b_fixed)`。
 
 ### 4.3 MappingLoss
 
@@ -114,8 +128,8 @@ L_map = L_task + sigmoid(lambda_st) * L_stab
 
 - `L_task`：交叉熵分类损失。
 - `L_stab`：对 `z` 加高斯噪声后前向输出的 MSE，衡量稳定性。
-- `L_smooth`：`||∇_z M(z)||²_F / (P * d)`，使用 `torch.func.jacfwd` 计算。
-- `L_align`：`1 - cos(z, mean(W_mod, dim=0))`。
+- `L_smooth`：`||∇_z M(z)||²_F / (P * d)`，由 `ParameterGenerator.smooth_loss()` 提供。
+- `L_align`：`1 - cos(z, mean(W_mod, dim=0))`，由 `ParameterGenerator.align_loss()` 提供。
 - `lambda_*` 为可训练的 `nn.Parameter`，通过 `sigmoid` 门控后参与加权。
 
 ---
@@ -191,13 +205,17 @@ uv run python3 -m pytest tests/test_slvt.py -v
 uv run python3 -m pytest tests/test_lwt.py -v
 ```
 
-当前测试集共 17 个用例，覆盖：
+当前测试集共 35 个用例，覆盖：
 
 - 各目标网络参数量与前向输出。
 - `functional_forward` 输出与模块前向一致且梯度可回传。
-- MappingNetwork 输出形状、可训练参数、固定权重、梯度回传到 `z`。
+- LRD 减少参数量且功能等价。
+- ParameterGenerator 抽象性、LinearMappingNetwork 输出形状、可训练参数、辅助方法。
 - MappingLoss 前向与梯度回传。
 - SLVT / LWT 训练一个 epoch 后 `z` 被更新。
+- LWT 稳定性损失的梯度不跨层泄漏。
+- checkpoint 保存后能够重建并复现前向输出。
+- 所有 YAML 配置均可完成一个 batch 的前向 + 反向。
 
 ---
 
@@ -224,9 +242,9 @@ uv run ruff format .
 
 - 所有网络类继承自 `torch.nn.Module`。
 - 代码注释与 docstring 主要使用中文；类名、函数名、变量名为英文。
-- `MappingNetwork` 的 `W_fixed`、`b_fixed` 必须注册为 buffer，不可训练。
+- `LinearMappingNetwork` 的 `W_fixed`、`b_fixed` 必须注册为 buffer，不可训练。
 - 参数生成后**不注入**目标网络模块，而是调用 `target_net.functional_forward(x, theta_hat)`。
-- LWT 中每层损失独立计算后再聚合，不得混用跨层隐向量。
+- LWT 中每层损失独立计算后再聚合，不得混用跨层隐向量；`L_stab` 计算时必须 detach 未扰动层的 `theta_hat` 切片。
 - 配置项统一从 YAML 读取；脚本支持通过命令行覆盖 `device`、`epochs`、`seed`。
 - 训练结束必须保存 checkpoint。每个 target + strategy 组合使用独立目录：
   - SLVT 保存到 `checkpoints/{target}_slvt/{target}_slvt_final.pth`。
@@ -247,25 +265,36 @@ seed: int
 lr: float
 weight_decay: float
 min_lr: float
+optimizer: adamw | adam | sgd       # 默认 adamw
+scheduler: cosine_annealing | step  # 默认 cosine_annealing
 alpha: float
 sigma_noise: float
 device: cuda | cpu
 log_interval: int
 checkpoint_dir: str
-save_interval: int           # 每隔多少 epoch 保存中间模型，1 表示每轮都存
+save_interval: int                  # 每隔多少 epoch 保存中间模型，1 表示每轮都存
 
 # SLVT 特有
+generator_type: linear              # 目前仅支持 linear
 latent_dim: int
 
 # LWT 特有
-layer_latent_dims:
-  conv1: int
-  conv2: int
-  fc1: int
-  fc2: int
-layer_alphas:  # 可选
-  conv1: float
+layer_generators:                   # 每层独立配置
+  conv1:
+    type: linear
+    latent_dim: int
+    alpha: float                    # 可选，默认用全局 alpha
+    lrd_rank: int                   # 可选，单独指定该层低秩秩
   ...
+
+# LRD 可选（SLVT / LWT 均可）
+lrd:
+  enabled: true | false | auto      # 默认 auto
+  default_rank: int                 # 默认 10
+  auto_enable_threshold: int        # 默认 200000
+  layer_ranks:
+    fc1: int
+    ...
 
 # 基线特有（无 SLVT/LWT 特有字段）
 target: cnn1 | cnn2 | cnn1_3conv

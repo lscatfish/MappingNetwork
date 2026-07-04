@@ -33,8 +33,8 @@ uv sync
 
 目标网络就是被压缩的那个“大网络”，它的参数由 `z` 生成。
 
-| 网络名 | 中文说明 | 参数量 | 结构特点 |
-|--------|---------|--------|----------|
+| 网络名 | 中文说明 | 原始参数量 | 结构特点 |
+|--------|---------|-----------|----------|
 | `CNN2` | 小型 CNN，类似 LeNet | 约 10.8 万 | 2 个卷积层 + 2 个全连接层，适合快速实验 |
 | `CNN1` | 中型 CNN，类似 AlexNet | 约 53.8 万 | 2 个卷积层 + 2 个全连接层，通道数比 CNN2 多 |
 | `CNN1_3Conv` | CNN1 的三卷积实验版 | 约 3.2 万 | 3 个卷积层 + 2 个全连接层，参数量最小 |
@@ -51,6 +51,11 @@ uv sync
 - Baseline 像直接雇 10 万个工人（参数）。
 - SLVT 像只雇 2048 个设计师（`z`），让他们画出一套 10 万人施工的图纸。
 - LWT 像给每一层楼单独雇一组设计师，每层画自己的图纸。
+
+### 2.3 参数生成网络与 LRD
+
+- **参数生成网络（ParameterGenerator）**：只负责把可学习向量 `z` 变成目标网络的参数向量 `theta_hat`。目前实现的是 `LinearMappingNetwork`（固定正交矩阵 + 可学习 `z`）。
+- **LRD（Low-Rank Decomposition，低秩分解）**：当目标网络太大时，把全连接层的权重拆成 `U @ V.T` 两个小矩阵，显著减少生成网络需要输出的参数数量，避免显存爆炸。默认对超过 20 万参数的网络自动开启。
 
 ---
 
@@ -77,11 +82,13 @@ uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn1_3
 
 ```yaml
 target: cnn2          # 目标网络：cnn1 / cnn2 / cnn1_3conv
-epochs: 30            # 训练轮数
-batch_size: 64        # 每批样本数
+epochs: 16            # 训练轮数
+batch_size: 256       # 每批样本数
 lr: 0.001             # 学习率
 seed: 42              # 随机种子
 device: cuda          # cuda 或 cpu
+checkpoint_dir: checkpoints
+save_interval: 2      # 每隔多少 epoch 保存中间模型
 ```
 
 **也可以直接用命令行**（适合临时测试）：
@@ -167,12 +174,14 @@ uv run python3 -m pytest tests/ -v --device cuda
 ```yaml
 target_net: cnn2              # 目标网络：cnn1 / cnn2 / cnn1_3conv
 training_strategy: slvt       # 训练策略：slvt / lwt
-batch_size: 64                # 每批训练样本数，越大越快但越占显存
-epochs: 30                    # 训练轮数，整个数据集过多少遍
+batch_size: 32                # 每批训练样本数，越大越快但越占显存
+epochs: 16                    # 训练轮数，整个数据集过多少遍
 seed: 42                      # 随机种子，固定后每次结果可复现
 lr: 0.001                     # 学习率，控制参数更新步长
 weight_decay: 0.0001          # 权重衰减，防止过拟合
 min_lr: 0.00001               # 余弦退火的最小学习率
+optimizer: adamw              # 优化器：adamw / adam / sgd
+scheduler: cosine_annealing   # 学习率调度：cosine_annealing / step
 alpha: 0.01                   # z 对映射权重的调制强度
 sigma_noise: 0.01             # L_stab 里给 z 加噪声的标准差
 device: cuda                  # 训练设备：cuda 或 cpu
@@ -184,32 +193,58 @@ save_interval: 1              # 每隔多少 epoch 保存一次中间模型，1 
 ### 4.2 SLVT 特有参数
 
 ```yaml
+generator_type: linear        # 参数生成网络类型，目前只有 linear
 latent_dim: 2048              # 隐向量 z 的长度，越短参数越少
 ```
 
-- `latent_dim` 越大，表达能力越强，但 `L_smooth` 计算 Jacobian 越慢、越占显存。
+- `latent_dim` 越大，表达能力越强，但 `L_smooth` 计算越慢、越占显存。
 - 如果显存不够，可以改成 `512` 或 `256`。
 
 ### 4.3 LWT 特有参数
 
-```yaml
-layer_latent_dims:            # 每一层隐向量的长度
-  conv1: 256
-  conv2: 256
-  fc1: 256
-  fc2: 256
+LWT 不再使用全局的 `layer_latent_dims`，而是使用 `layer_generators`，为每一层单独指定生成网络配置：
 
-layer_alphas:                 # 每一层的调制强度（可选，默认用上面的 alpha）
-  conv1: 0.01
-  conv2: 0.01
-  fc1: 0.01
-  fc2: 0.01
+```yaml
+layer_generators:
+  conv1:
+    type: linear
+    latent_dim: 256
+    alpha: 0.01
+  conv2:
+    type: linear
+    latent_dim: 256
+    alpha: 0.01
+  fc1:
+    type: linear
+    latent_dim: 256
+    alpha: 0.01
+    lrd_rank: 10              # 可选：单独给 fc1 指定低秩分解的秩
+  fc2:
+    type: linear
+    latent_dim: 64
+    alpha: 0.01
 ```
 
-- `layer_latent_dims` 的键名（`conv1`、`conv2`、`fc1`、`fc2`）必须和目标网络参数名前缀一致。
+- `layer_generators` 的键名（`conv1`、`conv2`、`fc1`、`fc2`）必须和目标网络参数名前缀一致。
 - 对 CNN1_3Conv，需要写成 `conv1`、`conv2`、`conv3`、`fc1`、`fc2`。
+- 每层的 `latent_dim` 可以不同；`alpha` 可以省略，默认用全局 `alpha`。
 
-### 4.4 如何修改配置？
+### 4.4 LRD（低秩分解）配置
+
+```yaml
+lrd:
+  enabled: auto               # 是否开启 LRD：true / false / auto
+  default_rank: 10            # 默认低秩秩
+  auto_enable_threshold: 200000  # auto 模式下，参数超过该阈值才开启
+  layer_ranks:                # 可选：单独为某层指定秩
+    fc1: 10
+```
+
+- `enabled: auto` 表示：目标网络总参数超过 `auto_enable_threshold` 时自动开启。
+- 开启 LRD 后，全连接层的权重会被拆成 `U @ V.T`，生成网络只需要生成 `U`、`V` 和 bias，参数量大幅减少。
+- 当前 LRD 只对 `nn.Linear` 模块生效，卷积层保持完整参数。
+
+### 4.5 如何修改配置？
 
 **方法 1：直接改 YAML 文件**
 
@@ -227,7 +262,7 @@ uv run python3 -m mapping_network.scripts.train \
   --seed 123
 ```
 
-> 注意：`latent_dim`、`layer_latent_dims`、`batch_size` 等参数只能通过改 YAML 文件来修改。
+> 注意：`latent_dim`、`layer_generators`、`batch_size`、`lrd` 等参数只能通过改 YAML 文件来修改。
 
 ---
 
@@ -256,11 +291,11 @@ checkpoints/cnn2_lwt/cnn2_lwt.log              # 训练日志文本
 ### 5.3 基线产物（以 CNN2 Baseline 为例）
 
 ```
-checkpoints/cnn2_baseline/cnn2_baseline_final.pth   # 最后一轮基线目标网络权重 + metadata
-checkpoints/cnn2_baseline/cnn2_baseline_best.pth    # 测试准确率最高的基线权重
-checkpoints/cnn2_baseline/cnn2_baseline_epoch1.pth  # 第 1 轮中间权重
-checkpoints/cnn2_baseline/cnn2_baseline_results.json # 训练记录
-checkpoints/cnn2_baseline/cnn2_baseline.log          # 训练日志文本
+checkpoints/cnn2_baseline/cnn2_baseline_final.pth     # 最后一轮基线目标网络权重 + metadata
+checkpoints/cnn2_baseline/cnn2_baseline_best.pth      # 测试准确率最高的基线权重
+checkpoints/cnn2_baseline/cnn2_baseline_epoch1.pth    # 第 1 轮中间权重
+checkpoints/cnn2_baseline/cnn2_baseline_results.json  # 训练记录
+checkpoints/cnn2_baseline/cnn2_baseline.log           # 训练日志文本
 ```
 
 加载基线时需要先取 `state_dict`：
@@ -283,20 +318,22 @@ model.load_state_dict(ckpt['state_dict'])
 
 - `train.py` 和 `train_baseline.py` 默认用 `cuda`。
 - 如果电脑没有 NVIDIA 显卡或 CUDA 不可用，脚本会报错，需要手动加 `--device cpu`。
+- 测试默认也优先使用 GPU。
 
 ### 6.2 训练时显存溢出（OOM）怎么办？
 
-通常是 `latent_dim` 太大或 `batch_size` 太大导致。尝试：
+通常是 `latent_dim` 太大、`batch_size` 太大，或者没有开启 LRD 导致。尝试：
 
-1. 改小 `latent_dim`（如从 2048 改为 512）
-2. 改小 `batch_size`（如从 64 改为 32）
-3. 使用 CPU：`--device cpu`（会慢很多）
+1. 确保 LRD 开启（大网络如 CNN1 会自动开启）。
+2. 改小 `latent_dim`（如从 2048 改为 512）。
+3. 改小 `batch_size`（如从 64 改为 32）。
+4. 使用 CPU：`--device cpu`（会慢很多）。
 
 ### 6.3 训练多久？
 
-- Baseline CNN2 30 轮：几分钟到十几分钟（GPU）
-- SLVT 30 轮：比 baseline 慢，因为每个 batch 要计算 Jacobian
-- LWT 30 轮：通常比 SLVT 更快，因为每层 `z` 维度小
+- Baseline CNN2 16 轮：几分钟到十几分钟（GPU）。
+- SLVT 16 轮：比 baseline 慢，因为每个 batch 要计算 Jacobian。
+- LWT 16 轮：通常比 SLVT 更快，因为每层 `z` 维度小。
 
 ### 6.4 准确率大概是多少？
 
@@ -324,3 +361,5 @@ model.load_state_dict(ckpt['state_dict'])
 | 评估 SLVT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_slvt/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
 | 评估 LWT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_lwt/cnn2_lwt_final.pth --config configs/cnn2_lwt.yaml` |
 | CPU 快速测试 | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml --device cpu --epochs 1` |
+| 代码检查 | `uv run ruff check .` |
+| 代码格式化 | `uv run ruff format .` |
