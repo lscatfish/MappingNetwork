@@ -9,20 +9,23 @@ weight_decay: 0.0001
 scheduler: cosine_annealing
 min_lr: 0.00001
 alpha: 0.01
+lrd:
+  enabled: false   # 所有层都不启用 LRD
 layer_generators:
   conv1:
     type: linear
-    latent_dim: 256
+    latent_dim: 64
     alpha: 0.01
   conv2:
     type: linear
-    latent_dim: 256
+    latent_dim: 512
     alpha: 0.01
+    # lrd_rank: 40
   fc1:
     type: linear
-    latent_dim: 256
+    latent_dim: 512
     alpha: 0.01
-    lrd_rank: 20
+    # lrd_rank: 20
   fc2:
     type: linear
     latent_dim: 64
