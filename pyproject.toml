@@ -1,0 +1,45 @@
+[project]
+name = "mapping-network"
+version = "0.1.0"
+description = "MNIST dataset model training with PyTorch"
+requires-python = ">=3.13"
+dependencies = [
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "torchaudio>=2.11.0",
+    "numpy>=2.4.6",
+    "scipy>=1.17.1",
+    "pandas>=3.0.3",
+    "tqdm>=4.67.3",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.9.0",
+    "matplotlib>=3.11.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [
+    ".venv",
+    ".git",
+]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
