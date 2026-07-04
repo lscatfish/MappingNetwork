@@ -70,9 +70,7 @@ class SLVTTrainer:
         # 避免重复添加 handler（如多次实例化）
         logger.handlers = []
 
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
         # 控制台输出
         console_handler = logging.StreamHandler()
@@ -112,8 +110,13 @@ class SLVTTrainer:
 
             # 3. 计算损失 (函数式前向)
             loss, losses_dict = self.loss_fn(
-                self.mapping_net.z, theta_hat, theta_noisy,
-                self.mapping_net, self.target_net, x, y,
+                self.mapping_net.z,
+                theta_hat,
+                theta_noisy,
+                self.mapping_net,
+                self.target_net,
+                x,
+                y,
             )
 
             # 4. 计算准确率（在 optimizer.step() 之前，使用当前 theta_hat）
@@ -131,12 +134,14 @@ class SLVTTrainer:
             total_loss += loss.item()
 
             if batch_idx % self.log_interval == 0:
-                pbar.set_postfix({
-                    'loss': f'{loss.item():.4f}',
-                    'acc': f'{100.*correct/total:.2f}%',
-                })
+                pbar.set_postfix(
+                    {
+                        'loss': f'{loss.item():.4f}',
+                        'acc': f'{100.0 * correct / total:.2f}%',
+                    }
+                )
 
-        return total_loss / len(self.train_loader), 100. * correct / total
+        return total_loss / len(self.train_loader), 100.0 * correct / total
 
     @torch.no_grad()
     def evaluate(self):
@@ -155,7 +160,7 @@ class SLVTTrainer:
             total += y.size(0)
             correct += predicted.eq(y).sum().item()
 
-        return 100. * correct / total
+        return 100.0 * correct / total
 
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
@@ -203,23 +208,21 @@ class SLVTTrainer:
             }
             results.append(epoch_result)
             test_acc_str = f'{test_acc:.2f}%' if test_acc is not None else 'N/A'
-            msg = (f'Epoch {epoch}: train_loss={train_loss:.4f}, '
-                   f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}')
+            msg = (
+                f'Epoch {epoch}: train_loss={train_loss:.4f}, '
+                f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}'
+            )
             self.logger.info(msg)
 
             # 保存中间模型
             if self.save_interval > 0 and epoch % self.save_interval == 0:
-                inter_path = self.save_checkpoint(
-                    results, suffix=f'_epoch{epoch}', epoch=epoch
-                )
+                inter_path = self.save_checkpoint(results, suffix=f'_epoch{epoch}', epoch=epoch)
                 self.logger.info(f'Intermediate checkpoint saved to {inter_path}')
 
             # 保存最优模型
             if test_acc is not None and test_acc > self.best_test_acc:
                 self.best_test_acc = test_acc
-                best_path = self.save_checkpoint(
-                    results, suffix='_best', epoch=epoch, is_best=True
-                )
+                best_path = self.save_checkpoint(results, suffix='_best', epoch=epoch, is_best=True)
                 self.logger.info(f'New best test_acc={test_acc:.2f}%, saved to {best_path}')
 
         # 保存最终 checkpoint

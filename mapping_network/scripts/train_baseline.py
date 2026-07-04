@@ -10,23 +10,27 @@ Usage:
   uv run python3 -m mapping_network.scripts.train_baseline --target cnn1
   uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 1 --device cpu
 """
+
 import argparse
-import os
 import json
 import logging
-import yaml
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import tqdm
+import yaml
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-import tqdm
 
-from mapping_network.target_nets import CNN2, CNN1, CNN1_3Conv
+from mapping_network.target_nets import CNN1, CNN2, CNN1_3Conv
 
 TARGET_NET_MAP = {
-    'cnn2': CNN2, 'cnn1': CNN1, 'cnn1_3conv': CNN1_3Conv,
+    'cnn2': CNN2,
+    'cnn1': CNN1,
+    'cnn1_3conv': CNN1_3Conv,
 }
 
 
@@ -37,10 +41,13 @@ def load_config(path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=None,
-                        help='Path to YAML config file (e.g., configs/cnn2_baseline.yaml)')
-    parser.add_argument('--target', type=str, default=None,
-                        choices=['cnn1', 'cnn2', 'cnn1_3conv'])
+    parser.add_argument(
+        '--config',
+        type=str,
+        default=None,
+        help='Path to YAML config file (e.g., configs/cnn2_baseline.yaml)',
+    )
+    parser.add_argument('--target', type=str, default=None, choices=['cnn1', 'cnn2', 'cnn1_3conv'])
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=None)
     parser.add_argument('--lr', type=float, default=None)
@@ -63,8 +70,14 @@ def main():
     lr = args.lr if args.lr is not None else cfg.get('lr', 0.001)
     seed = args.seed if args.seed is not None else cfg.get('seed', 42)
     device = args.device if args.device is not None else cfg.get('device', 'cuda')
-    checkpoint_dir = args.checkpoint_dir if args.checkpoint_dir is not None else cfg.get('checkpoint_dir', 'checkpoints')
-    save_interval = args.save_interval if args.save_interval is not None else cfg.get('save_interval', 1)
+    checkpoint_dir = (
+        args.checkpoint_dir
+        if args.checkpoint_dir is not None
+        else cfg.get('checkpoint_dir', 'checkpoints')
+    )
+    save_interval = (
+        args.save_interval if args.save_interval is not None else cfg.get('save_interval', 1)
+    )
 
     if target is None:
         parser.error('--target is required when no config file is provided')
@@ -93,10 +106,12 @@ def main():
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
     train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
     test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -128,8 +143,8 @@ def main():
             _, pred = y_hat.max(1)
             total += y.size(0)
             correct += pred.eq(y).sum().item()
-            pbar.set_postfix({'acc': f'{100.*correct/total:.2f}%'})
-        train_acc = 100. * correct / total
+            pbar.set_postfix({'acc': f'{100.0 * correct / total:.2f}%'})
+        train_acc = 100.0 * correct / total
         scheduler.step()
 
         model.eval()
@@ -141,7 +156,7 @@ def main():
                 _, pred = y_hat.max(1)
                 test_total += y.size(0)
                 test_correct += pred.eq(y).sum().item()
-        test_acc = 100. * test_correct / test_total
+        test_acc = 100.0 * test_correct / test_total
 
         epoch_result = {
             'epoch': epoch,
@@ -150,34 +165,42 @@ def main():
             'lr': scheduler.get_last_lr()[0],
         }
         results.append(epoch_result)
-        logger.info(f'Epoch {epoch}: train_acc={train_acc:.2f}%, '
-                    f'test_acc={test_acc:.2f}%, lr={scheduler.get_last_lr()[0]:.6f}')
+        logger.info(
+            f'Epoch {epoch}: train_acc={train_acc:.2f}%, '
+            f'test_acc={test_acc:.2f}%, lr={scheduler.get_last_lr()[0]:.6f}'
+        )
 
         # 保存中间模型
         if save_interval > 0 and epoch % save_interval == 0:
             inter_path = os.path.join(checkpoint_dir, f'{experiment_name}_epoch{epoch}.pth')
-            torch.save({
-                'type': 'baseline',
-                'target_net': target,
-                'epochs': epochs,
-                'epoch': epoch,
-                'final_test_acc': test_acc,
-                'state_dict': model.state_dict(),
-            }, inter_path)
+            torch.save(
+                {
+                    'type': 'baseline',
+                    'target_net': target,
+                    'epochs': epochs,
+                    'epoch': epoch,
+                    'final_test_acc': test_acc,
+                    'state_dict': model.state_dict(),
+                },
+                inter_path,
+            )
             logger.info(f'Intermediate checkpoint saved to {inter_path}')
 
         # 保存最优模型
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             best_path = os.path.join(checkpoint_dir, f'{experiment_name}_best.pth')
-            torch.save({
-                'type': 'baseline',
-                'target_net': target,
-                'epochs': epochs,
-                'epoch': epoch,
-                'final_test_acc': test_acc,
-                'state_dict': model.state_dict(),
-            }, best_path)
+            torch.save(
+                {
+                    'type': 'baseline',
+                    'target_net': target,
+                    'epochs': epochs,
+                    'epoch': epoch,
+                    'final_test_acc': test_acc,
+                    'state_dict': model.state_dict(),
+                },
+                best_path,
+            )
             logger.info(f'New best test_acc={test_acc:.2f}%, saved to {best_path}')
 
     # 保存最终结果

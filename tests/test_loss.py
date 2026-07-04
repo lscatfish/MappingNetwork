@@ -17,9 +17,7 @@ class TestMappingLoss:
         eps = torch.randn_like(mapping.z) * 0.01
         z_noisy = mapping.z + eps
         theta_noisy = torch.tanh(
-            mapping.W_fixed @ z_noisy
-            + mapping.alpha * (z_noisy * z_noisy).sum()
-            + mapping.b_fixed
+            mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
         )
 
         x = torch.randn(2, 1, 28, 28, device=device)
@@ -41,9 +39,7 @@ class TestMappingLoss:
         eps = torch.randn_like(mapping.z) * 0.01
         z_noisy = mapping.z + eps
         theta_noisy = torch.tanh(
-            mapping.W_fixed @ z_noisy
-            + mapping.alpha * (z_noisy * z_noisy).sum()
-            + mapping.b_fixed
+            mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
         )
 
         x = torch.randn(2, 1, 28, 28, device=device)
@@ -68,9 +64,7 @@ def test_mapping_loss_forward_lrd(device='cuda'):
     eps = torch.randn_like(mapping.z) * loss_fn.sigma_noise
     z_noisy = mapping.z + eps
     theta_noisy = torch.tanh(
-        mapping.W_fixed @ z_noisy
-        + mapping.alpha * (z_noisy * z_noisy).sum()
-        + mapping.b_fixed
+        mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
     )
     loss, losses = loss_fn(mapping.z, theta, theta_noisy, mapping, target_net, x, y)
     assert loss.item() == losses['total']

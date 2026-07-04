@@ -14,6 +14,7 @@ Usage:
       --checkpoint checkpoints/cnn2_lwt/cnn2_lwt_final.pth \\
       --config configs/cnn2_lwt.yaml
 """
+
 import argparse
 
 import torch
@@ -49,14 +50,18 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    device = args.device if args.device else cfg.get(
-        'device', 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = (
+        args.device
+        if args.device
+        else cfg.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
     )
 
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
     test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     test_loader = DataLoader(test_dataset, batch_size=cfg.get('batch_size', 64))
 
@@ -93,7 +98,7 @@ def main():
         group_order = checkpoint.get('layer_group_order', list(layer_mappings.keys()))
         theta_hat = torch.cat([layer_mappings[name]() for name in group_order])
     else:
-        raise ValueError(f"Unknown strategy: {checkpoint['training_strategy']}")
+        raise ValueError(f'Unknown strategy: {checkpoint["training_strategy"]}')
 
     acc = evaluate_model(target_net, theta_hat, test_loader, device)
     print(f'Test accuracy: {acc:.2f}%')

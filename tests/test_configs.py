@@ -2,6 +2,7 @@
 为每个 YAML 配置跑最小冒烟测试：batch_size=1 的一张图前向+反向，
 验证所有张量都在目标设备、不 OOM、可训练参数数量正确。
 """
+
 import os
 
 import pytest
@@ -70,10 +71,18 @@ def test_mapping_config_one_batch(cfg_path, device):
             device=device,
         )
         trainer = SLVTTrainer(
-            mapping, target_net, loss_fn, loader, loader,
-            lr=cfg['lr'], weight_decay=cfg.get('weight_decay', 0.0001),
-            epochs=1, min_lr=cfg.get('min_lr', 1e-5), device=device,
-            log_interval=1, checkpoint_dir='/tmp/test_configs',
+            mapping,
+            target_net,
+            loss_fn,
+            loader,
+            loader,
+            lr=cfg['lr'],
+            weight_decay=cfg.get('weight_decay', 0.0001),
+            epochs=1,
+            min_lr=cfg.get('min_lr', 1e-5),
+            device=device,
+            log_interval=1,
+            checkpoint_dir='/tmp/test_configs',
             experiment_name=f'test_config_{os.path.basename(cfg_path).replace(".yaml", "")}',
             save_interval=0,
             checkpoint_metadata={
@@ -88,11 +97,18 @@ def test_mapping_config_one_batch(cfg_path, device):
         )
     else:
         trainer = LWTTrainer(
-            target_net, loss_fn, cfg['layer_generators'],
-            train_loader=loader, test_loader=loader,
-            lr=cfg['lr'], weight_decay=cfg.get('weight_decay', 0.0001),
-            epochs=1, min_lr=cfg.get('min_lr', 1e-5), device=device,
-            log_interval=1, checkpoint_dir='/tmp/test_configs',
+            target_net,
+            loss_fn,
+            cfg['layer_generators'],
+            train_loader=loader,
+            test_loader=loader,
+            lr=cfg['lr'],
+            weight_decay=cfg.get('weight_decay', 0.0001),
+            epochs=1,
+            min_lr=cfg.get('min_lr', 1e-5),
+            device=device,
+            log_interval=1,
+            checkpoint_dir='/tmp/test_configs',
             experiment_name=f'test_config_{os.path.basename(cfg_path).replace(".yaml", "")}',
             save_interval=0,
             checkpoint_metadata={
@@ -125,8 +141,7 @@ def test_mapping_config_one_batch(cfg_path, device):
         p.numel() for p in trainer.optimizer.param_groups[0]['params'] if p.requires_grad
     )
     assert trainable == expected_mapping_trainable_params(cfg), (
-        f'{cfg_path}: trainable {trainable} != expected '
-        f'{expected_mapping_trainable_params(cfg)}'
+        f'{cfg_path}: trainable {trainable} != expected {expected_mapping_trainable_params(cfg)}'
     )
 
     # 验证 z 被更新（有梯度且不是 nan）

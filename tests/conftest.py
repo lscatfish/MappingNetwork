@@ -6,8 +6,10 @@ import torch
 
 def pytest_addoption(parser):
     parser.addoption(
-        '--device', action='store', default=None,
-        help='Device to run tests on: "cuda", "cpu", or None (auto-detect)'
+        '--device',
+        action='store',
+        default=None,
+        help='Device to run tests on: "cuda", "cpu", or None (auto-detect)',
     )
 
 

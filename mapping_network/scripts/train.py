@@ -5,6 +5,7 @@ Usage:
   uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml
   uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml --device cpu --epochs 1
 """
+
 import argparse
 import os
 
@@ -57,14 +58,16 @@ def main():
     device = cfg.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
     print(f'Using device: {device}')
     print(
-        f"Strategy: {cfg['training_strategy']}, Target: {cfg['target_net']}, Epochs: {cfg['epochs']}"
+        f'Strategy: {cfg["training_strategy"]}, Target: {cfg["target_net"]}, Epochs: {cfg["epochs"]}'
     )
 
     # Data
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,)),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ]
+    )
     train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
     test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=True)
@@ -85,8 +88,7 @@ def main():
             }
 
     target_net = build_target_net(cfg['target_net'], lrd_config)
-    print(f'Target network: {cfg["target_net"]}, '
-          f'params: {target_net.get_total_params():,}')
+    print(f'Target network: {cfg["target_net"]}, params: {target_net.get_total_params():,}')
 
     # Loss
     loss_fn = MappingLoss(sigma_noise=cfg.get('sigma_noise', 0.01)).to(device)
@@ -155,7 +157,7 @@ def main():
             save_interval=cfg.get('save_interval', 1),
         )
     else:
-        raise ValueError(f"Unknown strategy: {cfg['training_strategy']}")
+        raise ValueError(f'Unknown strategy: {cfg["training_strategy"]}')
 
     results = trainer.train()
     final_acc = results[-1]['test_acc']

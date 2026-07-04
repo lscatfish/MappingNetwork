@@ -9,12 +9,12 @@ class CNN2(TargetNet):
 
     def __init__(self, lrd_config=None):
         super().__init__(lrd_config)
-        self.conv1 = nn.Conv2d(1, 20, kernel_size=5)     # 520 params
+        self.conv1 = nn.Conv2d(1, 20, kernel_size=5)  # 520 params
         self.pool1 = nn.AvgPool2d(2)
-        self.conv2 = nn.Conv2d(20, 32, kernel_size=5)    # 16,032 params
+        self.conv2 = nn.Conv2d(20, 32, kernel_size=5)  # 16,032 params
         self.pool2 = nn.AvgPool2d(2)
-        self.fc1 = nn.Linear(512, 176)                    # 90,288 params
-        self.fc2 = nn.Linear(176, 10)                     # 1,770 params
+        self.fc1 = nn.Linear(512, 176)  # 90,288 params
+        self.fc2 = nn.Linear(176, 10)  # 1,770 params
         self._build_param_slices()
 
     def _functional_forward(self, x, params):

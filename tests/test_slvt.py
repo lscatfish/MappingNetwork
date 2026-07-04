@@ -15,9 +15,7 @@ class TestSLVT:
     def test_slvt_train_one_batch(self, device):
         """验证 SLVT 训练一个 batch 后 z 有梯度更新，且全在指定设备上。"""
         target = CNN2().to(device)
-        mapping = LinearMappingNetwork(
-            target.get_total_params(), 64, device=device
-        ).to(device)
+        mapping = LinearMappingNetwork(target.get_total_params(), 64, device=device).to(device)
         loss_fn = MappingLoss().to(device)
 
         x = torch.randn(8, 1, 28, 28, device=device)
@@ -28,8 +26,13 @@ class TestSLVT:
         z_before = mapping.z.data.clone()
 
         trainer = SLVTTrainer(
-            mapping, target, loss_fn, loader,
-            epochs=1, device=device, log_interval=1,
+            mapping,
+            target,
+            loss_fn,
+            loader,
+            epochs=1,
+            device=device,
+            log_interval=1,
             checkpoint_dir='/tmp/test_slvt_checkpoints',
             experiment_name='test_slvt',
         )
@@ -41,9 +44,7 @@ class TestSLVT:
         assert next(mapping.parameters()).device.type == device
 
         # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
-        checkpoint_path = os.path.join(
-            '/tmp/test_slvt_checkpoints', 'test_slvt_final.pth'
-        )
+        checkpoint_path = os.path.join('/tmp/test_slvt_checkpoints', 'test_slvt_final.pth')
         assert os.path.exists(checkpoint_path)
         ckpt = torch.load(checkpoint_path, map_location='cpu')
         assert isinstance(ckpt, dict)
@@ -58,17 +59,24 @@ class TestSLVT:
 
 def test_slvt_z_updated_with_lrd(device):
     target_net = CNN2(lrd_config={'enabled': True, 'default_rank': 10}).to(device)
-    mapping = LinearMappingNetwork(
-        target_net.get_total_params(), 64, device=device
-    ).to(device)
+    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device).to(device)
     loss_fn = MappingLoss(sigma_noise=0.01).to(device)
     x = torch.randn(1, 1, 28, 28, device=device)
     y = torch.tensor([0], device=device)
     loader = DataLoader(TensorDataset(x, y), batch_size=1)
     trainer = SLVTTrainer(
-        mapping, target_net, loss_fn, loader, loader,
-        lr=0.001, weight_decay=0.0001, epochs=1, device=device,
-        log_interval=1, checkpoint_dir='/tmp/test_slvt', experiment_name='test',
+        mapping,
+        target_net,
+        loss_fn,
+        loader,
+        loader,
+        lr=0.001,
+        weight_decay=0.0001,
+        epochs=1,
+        device=device,
+        log_interval=1,
+        checkpoint_dir='/tmp/test_slvt',
+        experiment_name='test',
         checkpoint_metadata={
             'target_net': 'cnn2',
             'training_strategy': 'slvt',
