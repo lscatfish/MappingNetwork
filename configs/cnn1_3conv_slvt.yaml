@@ -3,7 +3,7 @@ target_net: cnn1_3conv
 training_strategy: slvt
 latent_dim: 1024
 batch_size: 32
-epochs: 16
+epochs: 15
 seed: 42
 optimizer: adamw
 lr: 0.001
@@ -23,4 +23,4 @@ sigma_noise: 0.01
 device: cuda
 log_interval: 100
 checkpoint_dir: checkpoints
-save_interval: 1
+save_interval: 3
