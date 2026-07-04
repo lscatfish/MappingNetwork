@@ -35,7 +35,24 @@ uv run python3 -m mapping_network.scripts.train_baseline --target cnn1 --epochs 
 uv run python3 -m mapping_network.scripts.train_baseline --target cnn1_3conv --epochs 30
 ```
 
-基线权重保存为 `{target}_baseline.pth`（例如 `cnn2_baseline.pth`）。
+基线权重保存为 `{target}_baseline.pth`（例如 `cnn2_baseline.pth`），格式为：
+
+```python
+{
+  'type': 'baseline',
+  'target_net': 'cnn2',
+  'epochs': 30,
+  'final_test_acc': 98.69,
+  'state_dict': model.state_dict(),
+}
+```
+
+加载基线权重时需要先取出 `state_dict`：
+
+```python
+ckpt = torch.load('cnn2_baseline.pth')
+model.load_state_dict(ckpt['state_dict'])
+```
 
 ### 3. 训练 Mapping Network
 
