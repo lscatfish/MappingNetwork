@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from .base import TargetNet
 
 class CNN1(TargetNet):
-    """AlexNet 风格，~537,912 参数。"""
+    """AlexNet 风格，~537,960 参数。"""
 
     def __init__(self):
         super().__init__()

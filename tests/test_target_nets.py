@@ -1,6 +1,8 @@
 import pytest
 import torch
 from mapping_network.target_nets.cnn2 import CNN2
+from mapping_network.target_nets.cnn1 import CNN1
+from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 
 
 def test_cnn2_parameter_count():
@@ -28,10 +30,6 @@ def test_cnn2_functional_forward():
     assert theta_hat.grad.shape == (model.get_total_params(),)
 
 
-from mapping_network.target_nets.cnn1 import CNN1
-from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
-
-
 def test_cnn1_parameter_count():
     model = CNN1()
     total = sum(p.numel() for p in model.parameters())
@@ -52,6 +50,20 @@ def test_cnn1_functional_forward():
     y = model.functional_forward(x, theta_hat)
     y.sum().backward()
     assert theta_hat.grad is not None
+
+
+def test_cnn1_3conv_parameter_count():
+    model = CNN1_3Conv()
+    total = sum(p.numel() for p in model.parameters())
+    # 16*25+16 + 16*32*25+32 + 32*64*9+64 + 64*10+10 = 416+12832+18496+650 = 32394
+    assert total == 32394, f'Expected 32394, got {total}'
+
+
+def test_cnn1_3conv_forward():
+    model = CNN1_3Conv()
+    x = torch.randn(2, 1, 28, 28)
+    y = model(x)
+    assert y.shape == (2, 10)
 
 
 def test_cnn1_3conv_functional_forward():
