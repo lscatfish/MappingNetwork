@@ -1,6 +1,6 @@
 target_net: cnn2
 training_strategy: lwt
-batch_size: 32
+batch_size: 128
 epochs: 15
 seed: 42
 optimizer: adamw
@@ -22,7 +22,7 @@ layer_generators:
     type: linear
     latent_dim: 256
     alpha: 0.01
-    lrd_rank: 10
+    lrd_rank: 20
   fc2:
     type: linear
     latent_dim: 64
@@ -30,7 +30,7 @@ layer_generators:
 lambda_st_init: 0.1
 lambda_sm_init: 0.1
 lambda_al_init: 0.1
-sigma_noise: 0.01
+sigma_noise: 0.1
 device: cuda
 log_interval: 100
 checkpoint_dir: checkpoints
