@@ -1,7 +1,7 @@
 """
 Evaluate a trained Mapping Network checkpoint.
 
-Supports both SLVT (single MappingNetwork) and LWT (per-layer MappingNetworks).
+Supports both SLVT (single ParameterGenerator) and LWT (per-layer ParameterGenerators).
 
 Usage:
   # SLVT checkpoint
@@ -15,64 +15,28 @@ Usage:
       --config configs/cnn2_lwt.yaml
 """
 import argparse
-import yaml
+
 import torch
+import torch.nn as nn
+import yaml
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-from mapping_network.target_nets import CNN2, CNN1, CNN1_3Conv
-from mapping_network.mapping.mapping_net import MappingNetwork
-
-TARGET_NET_MAP = {
-    'cnn2': CNN2, 'cnn1': CNN1, 'cnn1_3conv': CNN1_3Conv,
-}
+from mapping_network.factory import build_generator, build_target_net
 
 
-def build_param_groups(target_net):
-    """Group target net params by layer name prefix, matching LWTTrainer logic."""
-    groups = {}
-    for name, param in target_net.named_parameters():
-        base = name.split('.')[0]
-        if base not in groups:
-            groups[base] = 0
-        groups[base] += param.numel()
-    return list(groups.items())
-
-
-@torch.no_grad()
-def evaluate_slvt(mapping, target_net, test_loader, device):
-    mapping.eval()
+def evaluate_model(target_net, theta_hat, test_loader, device):
+    """Run one evaluation pass using a full generated parameter vector."""
     target_net.eval()
-    theta = mapping()
-    correct = total = 0
-    for x, y in test_loader:
-        x, y = x.to(device), y.to(device)
-        y_hat = target_net.functional_forward(x, theta)
-        _, pred = y_hat.max(1)
-        total += y.size(0)
-        correct += pred.eq(y).sum().item()
-    return 100. * correct / total
-
-
-@torch.no_grad()
-def evaluate_lwt(mappings, param_groups, target_net, test_loader, device):
-    """LWT evaluation: concatenate per-layer mapping outputs into full theta_hat."""
-    target_net.eval()
-    for mapping in mappings.values():
-        mapping.eval()
-
-    # Concatenate per-group theta in the same order as param_groups
-    all_theta = [mappings[name]() for name, _ in param_groups]
-    theta_hat = torch.cat(all_theta)
-
-    correct = total = 0
+    correct = 0
+    total = 0
     for x, y in test_loader:
         x, y = x.to(device), y.to(device)
         y_hat = target_net.functional_forward(x, theta_hat)
         _, pred = y_hat.max(1)
         total += y.size(0)
         correct += pred.eq(y).sum().item()
-    return 100. * correct / total
+    return 100.0 * correct / total
 
 
 def main():
@@ -98,53 +62,40 @@ def main():
 
     checkpoint = torch.load(args.checkpoint, map_location=device)
 
-    # 新格式：checkpoint 是包含 metadata 和 state_dict 的字典
-    # 旧格式：直接是 state_dict（依赖 config 提供结构信息）
-    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
-        ckpt_meta = checkpoint
-        state_dict = checkpoint['state_dict']
-    else:
-        ckpt_meta = {}
-        state_dict = checkpoint
+    target_net = build_target_net(checkpoint['target_net'], checkpoint.get('lrd_config'))
+    target_net = target_net.to(device)
 
-    # target_net / strategy 优先从 checkpoint metadata 读取，其次从 config 读取
-    target_net_name = ckpt_meta.get('target_net') or cfg.get('target_net')
-    strategy = ckpt_meta.get('training_strategy') or cfg.get('training_strategy', 'slvt')
-
-    target_cls = TARGET_NET_MAP[target_net_name]
-    target_net = target_cls().to(device)
-
-    if strategy == 'lwt':
-        # LWT: recreate per-layer MappingNetworks matching the trainer's group sizes
-        param_groups = build_param_groups(target_net)
-        mappings = {}
-        layer_dims = ckpt_meta.get('layer_latent_dims') or cfg.get('layer_latent_dims', {})
-        layer_alphas = ckpt_meta.get('layer_alphas') or cfg.get('layer_alphas')
-        for name, group_size in param_groups:
-            dim = layer_dims.get(name, 64) if isinstance(layer_dims, dict) else 64
-            alpha = layer_alphas.get(name, cfg.get('alpha', 0.01)) if isinstance(layer_alphas, dict) else cfg.get('alpha', 0.01)
-            mappings[name] = MappingNetwork(
-                group_size, dim, alpha=alpha, device=device
-            )
-
-        for name, mapping in mappings.items():
-            if name in state_dict:
-                mapping.load_state_dict(state_dict[name])
-
-        acc = evaluate_lwt(mappings, param_groups, target_net, test_loader, device)
-    else:
-        # SLVT: single MappingNetwork
-        latent_dim = ckpt_meta.get('latent_dim') or cfg.get('latent_dim', 2048)
-        alpha = ckpt_meta.get('alpha') or cfg.get('alpha', 0.01)
-        mapping = MappingNetwork(
+    if checkpoint['training_strategy'] == 'slvt':
+        mapping = build_generator(
+            checkpoint.get('generator_type', 'linear'),
             target_net.get_total_params(),
-            latent_dim,
-            alpha=alpha,
-            device=device,
+            checkpoint['latent_dim'],
+            checkpoint.get('alpha', 0.01),
+            device,
         )
-        mapping.load_state_dict(state_dict)
-        acc = evaluate_slvt(mapping, target_net, test_loader, device)
+        mapping.load_state_dict(checkpoint['state_dict'])
+        theta_hat = mapping()
+    elif checkpoint['training_strategy'] == 'lwt':
+        # Rebuild layer mappings and load each state_dict
+        layer_mappings = nn.ModuleDict()
+        for name, gen_cfg in checkpoint['layer_generator_configs'].items():
+            group_size = target_net.get_group_param_size(name)
+            mapping = build_generator(
+                gen_cfg.get('type', 'linear'),
+                group_size,
+                gen_cfg['latent_dim'],
+                gen_cfg.get('alpha', 0.01),
+                device,
+            )
+            mapping.load_state_dict(checkpoint['state_dict'][name])
+            layer_mappings[name] = mapping
+        # Concatenate in the same order as target net param groups
+        group_order = checkpoint.get('layer_group_order', list(layer_mappings.keys()))
+        theta_hat = torch.cat([layer_mappings[name]() for name in group_order])
+    else:
+        raise ValueError(f"Unknown strategy: {checkpoint['training_strategy']}")
 
+    acc = evaluate_model(target_net, theta_hat, test_loader, device)
     print(f'Test accuracy: {acc:.2f}%')
 
 
