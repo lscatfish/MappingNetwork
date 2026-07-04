@@ -5,7 +5,7 @@ batch_size: 32
 epochs: 20
 seed: 42
 optimizer: adamw
-lr: 0.01
+lr: 0.001
 weight_decay: 0.00001
 scheduler: cosine_annealing
 min_lr: 0.00001
@@ -15,10 +15,10 @@ lrd:
   default_rank: 10
   layer_ranks:
     fc1: 10
-lambda_st_init: 0.01
-lambda_sm_init: 0.01
-lambda_al_init: 0.01
-sigma_noise: 0.001
+lambda_st_init: 0.1
+lambda_sm_init: 0.1
+lambda_al_init: 0.1
+sigma_noise: 0.00001
 device: cuda
 log_interval: 100
 checkpoint_dir: checkpoints
