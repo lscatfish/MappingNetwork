@@ -154,7 +154,7 @@ uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 
 uv run python3 -m mapping_network.scripts.train_baseline --target cnn1 --device cpu --epochs 1
 ```
 
-基线权重会保存到 `checkpoints/baseline/{target}_baseline_final.pth`，并同时生成 `_best.pth`、`_epochN.pth`、`_results.json`、`.log`。
+每种训练任务（target + strategy 组合）有独立目录，例如 `checkpoints/cnn2_baseline/`、`checkpoints/cnn2_slvt/`。最终权重保存为 `{target}_{strategy}_final.pth`，并同时生成 `_best.pth`、`_epochN.pth`、`_results.json`、`.log`。
 
 ### 5.4 评估 Checkpoint
 
@@ -228,10 +228,10 @@ uv run ruff format .
 - 参数生成后**不注入**目标网络模块，而是调用 `target_net.functional_forward(x, theta_hat)`。
 - LWT 中每层损失独立计算后再聚合，不得混用跨层隐向量。
 - 配置项统一从 YAML 读取；脚本支持通过命令行覆盖 `device`、`epochs`、`seed`。
-- 训练结束必须保存 checkpoint：
-  - SLVT 保存 `MappingNetwork.state_dict()` 到 `checkpoints/slvt/{target}_slvt_final.pth`。
-  - LWT 保存 `{layer_name: MappingNetwork.state_dict()}` 字典到 `checkpoints/lwt/{target}_lwt_final.pth`。
-  - 基线保存目标网络 `state_dict` 到 `checkpoints/baseline/{target}_baseline_final.pth`。
+- 训练结束必须保存 checkpoint。每个 target + strategy 组合使用独立目录：
+  - SLVT 保存到 `checkpoints/{target}_slvt/{target}_slvt_final.pth`。
+  - LWT 保存到 `checkpoints/{target}_lwt/{target}_lwt_final.pth`。
+  - 基线保存到 `checkpoints/{target}_baseline/{target}_baseline_final.pth`。
   - 三种训练都额外保存 `_best.pth`、`_epochN.pth`（由 `save_interval` 控制）、`_results.json`、`.log`。
 
 ### 7.3 配置文件约定
@@ -302,8 +302,8 @@ target: cnn1 | cnn2 | cnn1_3conv
 | 训练 SLVT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml` |
 | 训练 LWT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml` |
 | 训练基线 | `uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn2_baseline.yaml` |
-| 评估 SLVT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/slvt/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
-| 评估 LWT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/lwt/cnn2_lwt_final.pth --config configs/cnn2_lwt.yaml` |
+| 评估 SLVT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_slvt/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
+| 评估 LWT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_lwt/cnn2_lwt_final.pth --config configs/cnn2_lwt.yaml` |
 | 代码检查 | `uv run ruff check .` |
 | 代码格式化 | `uv run ruff format .` |
 

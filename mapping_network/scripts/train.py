@@ -87,7 +87,7 @@ def main():
     }
 
     base_checkpoint_dir = cfg.get('checkpoint_dir', 'checkpoints')
-    checkpoint_dir = os.path.join(base_checkpoint_dir, cfg['training_strategy'])
+    checkpoint_dir = os.path.join(base_checkpoint_dir, exp_name)
 
     if cfg['training_strategy'] == 'slvt':
         mapping = MappingNetwork(

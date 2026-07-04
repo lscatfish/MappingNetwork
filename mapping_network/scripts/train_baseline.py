@@ -69,9 +69,9 @@ def main():
     if target is None:
         parser.error('--target is required when no config file is provided')
 
-    checkpoint_dir = os.path.join(checkpoint_dir, 'baseline')
-    os.makedirs(checkpoint_dir, exist_ok=True)
     experiment_name = f'{target}_baseline'
+    checkpoint_dir = os.path.join(checkpoint_dir, experiment_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     torch.manual_seed(seed)
     if torch.cuda.is_available():
