@@ -1,7 +1,7 @@
 """Shared test fixtures and configurations."""
 
-import torch
 import pytest
+import torch
 
 
 def pytest_addoption(parser):
