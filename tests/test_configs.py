@@ -12,11 +12,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from mapping_network.factory import build_target_net
 from mapping_network.generators.linear import LinearMappingNetwork
 from mapping_network.mapping.loss import MappingLoss
-from mapping_network.target_nets import CNN1, CNN2, CNN1_3Conv
 from mapping_network.trainer.lwt import LWTTrainer
 from mapping_network.trainer.slvt import SLVTTrainer
-
-TARGET_MAP = {'cnn1': CNN1, 'cnn2': CNN2, 'cnn1_3conv': CNN1_3Conv}
 
 # 包含 configs/ 下全部 YAML，按类型区分期望。
 MAPPING_CONFIGS = [
@@ -109,6 +106,8 @@ def test_mapping_config_one_batch(cfg_path, device):
     # 验证所有相关张量/参数在目标设备
     assert next(target_net.parameters()).device.type == device.split(':')[0]
     assert loss_fn.lambda_st.device.type == device.split(':')[0]
+    assert loss_fn.lambda_sm.device.type == device.split(':')[0]
+    assert loss_fn.lambda_al.device.type == device.split(':')[0]
 
     if cfg['training_strategy'] == 'slvt':
         assert mapping.z.device.type == device.split(':')[0]
