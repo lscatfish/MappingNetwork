@@ -1,11 +1,14 @@
-import os
 import json
 import logging
+import os
+
 import torch
 import torch.optim as optim
+import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
-import tqdm
+
+from mapping_network.generators.base import ParameterGenerator
 
 
 class SLVTTrainer:
@@ -18,7 +21,7 @@ class SLVTTrainer:
 
     def __init__(
         self,
-        mapping_net,
+        mapping_net: ParameterGenerator,
         target_net,
         loss_fn,
         train_loader: DataLoader,
@@ -51,9 +54,8 @@ class SLVTTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.logger = self._setup_logger()
 
-        # 只更新 z 和 λ (MappingNet 权重固定)
-        trainable_params = [
-            self.mapping_net.z,
+        # 只更新生成网络的可训练参数和 λ (MappingNet 权重固定)
+        trainable_params = list(self.mapping_net.parameters()) + [
             self.loss_fn.lambda_st,
             self.loss_fn.lambda_sm,
             self.loss_fn.lambda_al,
@@ -161,9 +163,11 @@ class SLVTTrainer:
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'slvt'),
+            'generator_type': self.checkpoint_metadata.get('generator_type', 'linear'),
             'latent_dim': self.checkpoint_metadata.get('latent_dim'),
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
+            'lrd_config': self.checkpoint_metadata.get('lrd_config'),
             'state_dict': self.mapping_net.state_dict(),
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
