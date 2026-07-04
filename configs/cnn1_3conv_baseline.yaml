@@ -1,6 +1,6 @@
 # CNN1_3Conv 基线目标网络训练配置
 target: cnn1_3conv
-epochs: 30
+epochs: 16
 batch_size: 64
 lr: 0.001
 seed: 42

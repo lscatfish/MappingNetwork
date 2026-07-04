@@ -1,7 +1,7 @@
 target_net: cnn2
 training_strategy: lwt
 batch_size: 64
-epochs: 30
+epochs: 16
 seed: 42
 optimizer: adamw
 lr: 0.001
