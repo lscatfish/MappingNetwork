@@ -6,12 +6,12 @@ Supports both SLVT (single MappingNetwork) and LWT (per-layer MappingNetworks).
 Usage:
   # SLVT checkpoint
   uv run python3 -m mapping_network.scripts.evaluate \\
-      --checkpoint checkpoints/cnn2_slvt_final.pth \\
+      --checkpoint checkpoints/slvt/cnn2_slvt_final.pth \\
       --config configs/cnn2_slvt.yaml
 
   # LWT checkpoint (dict of per-layer state_dicts)
   uv run python3 -m mapping_network.scripts.evaluate \\
-      --checkpoint checkpoints/cnn2_lwt_final.pth \\
+      --checkpoint checkpoints/lwt/cnn2_lwt_final.pth \\
       --config configs/cnn2_lwt.yaml
 """
 import argparse

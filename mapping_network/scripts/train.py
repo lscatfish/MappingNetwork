@@ -6,6 +6,7 @@ Usage:
   uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml --device cpu --epochs 1
 """
 import argparse
+import os
 import yaml
 import torch
 from torch.utils.data import DataLoader
@@ -85,6 +86,9 @@ def main():
         'sigma_noise': cfg.get('sigma_noise', 0.01),
     }
 
+    base_checkpoint_dir = cfg.get('checkpoint_dir', 'checkpoints')
+    checkpoint_dir = os.path.join(base_checkpoint_dir, cfg['training_strategy'])
+
     if cfg['training_strategy'] == 'slvt':
         mapping = MappingNetwork(
             target_net.get_total_params(),
@@ -108,7 +112,7 @@ def main():
             min_lr=cfg.get('min_lr', 1e-5),
             device=device,
             log_interval=cfg.get('log_interval', 100),
-            checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
+            checkpoint_dir=checkpoint_dir,
             experiment_name=exp_name,
             checkpoint_metadata=slvt_metadata,
             save_interval=cfg.get('save_interval', 1),
@@ -131,7 +135,7 @@ def main():
             min_lr=cfg.get('min_lr', 1e-5),
             device=device,
             log_interval=cfg.get('log_interval', 100),
-            checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
+            checkpoint_dir=checkpoint_dir,
             experiment_name=exp_name,
             checkpoint_metadata=lwt_metadata,
             save_interval=cfg.get('save_interval', 1),
