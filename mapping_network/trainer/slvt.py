@@ -102,8 +102,11 @@ class SLVTTrainer:
             # 2. 计算噪声版本用于 L_stab
             eps = torch.randn_like(self.mapping_net.z) * self.loss_fn.sigma_noise
             z_noisy = self.mapping_net.z + eps
-            W_mod_noisy = self.mapping_net.W_fixed + self.mapping_net.alpha * z_noisy.unsqueeze(0)
-            theta_noisy = torch.tanh(W_mod_noisy @ z_noisy + self.mapping_net.b_fixed)
+            theta_noisy = torch.tanh(
+                self.mapping_net.W_fixed @ z_noisy
+                + self.mapping_net.alpha * (z_noisy * z_noisy).sum()
+                + self.mapping_net.b_fixed
+            )
 
             # 3. 计算损失 (函数式前向)
             loss, losses_dict = self.loss_fn(

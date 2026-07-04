@@ -41,26 +41,40 @@ class MappingLoss(nn.Module):
         l_stab = F.mse_loss(y_hat_noisy, y_hat.detach())
 
         # === L_smooth: smoothness loss (Equation 29) ===
-        # ||nabla_z M_phi(z)||^2_F / P  (normalised by P for cross-architecture transfer)
-        # Use jacfwd (forward-mode AD via vmap) for memory-efficient Jacobian of [P] -> [d].
-        from torch.func import jacfwd
+        # ||nabla_z M_phi(z)||^2_F / (P * d)
+        # M(z) = tanh(W_fixed @ z + alpha * ||z||^2 + b)
+        # nabla_z M_i = tanh'(a_i) * (W_fixed[i, :] + 2 * alpha * z)
+        # 展开后：||nabla_z M_i||^2 = tanh'(a_i)^2 * (
+        #     ||W_fixed[i, :]||^2 + 4*alpha*W_fixed[i, :]@z + 4*alpha^2*||z||^2)
+        # 分项计算，避免产生 [P, d] 中间张量导致显存翻倍。
+        P, d = mapping_net.P, mapping_net.d
+        alpha = mapping_net.alpha
+        W_fixed = mapping_net.W_fixed
+        b_fixed = mapping_net.b_fixed
 
-        def mapping_fn(z_in):
-            # 代数展开避免 vmap 时广播出 [B, P, d] 大中间张量：
-            # (W + alpha * z.unsqueeze(0)) @ z = W @ z + alpha * ||z||^2
-            return torch.tanh(
-                z_in @ mapping_net.W_fixed.T
-                + mapping_net.alpha * (z_in * z_in).sum(dim=-1, keepdim=True)
-                + mapping_net.b_fixed
-            )
+        a = W_fixed @ z + alpha * (z * z).sum() + b_fixed  # [P]
+        tanh_derivative_sq = (1 - torch.tanh(a) ** 2) ** 2  # [P]
 
-        jacobian = jacfwd(mapping_fn)(z)  # [P, d]
-        l_smooth = torch.sum(jacobian ** 2) / jacobian.numel()
+        # term1 = sum_i tanh'(a_i)^2 * ||W_fixed[i, :]||^2
+        row_norms_sq = torch.zeros(P, device=z.device, dtype=z.dtype)
+        chunk_size = 10000
+        for start in range(0, P, chunk_size):
+            end = min(start + chunk_size, P)
+            row_norms_sq[start:end] = (W_fixed[start:end] ** 2).sum(dim=1)
+        term1 = (tanh_derivative_sq * row_norms_sq).sum()
 
-        W_mod = mapping_net.W_fixed + mapping_net.alpha * z.unsqueeze(0)
+        # term2 = sum_i tanh'(a_i)^2 * 4*alpha*W_fixed[i, :]@z
+        #       = 4*alpha * z @ (W_fixed.T @ tanh_derivative_sq)
+        term2 = 4 * alpha * (z * (W_fixed.T @ tanh_derivative_sq)).sum()
+
+        # term3 = sum_i tanh'(a_i)^2 * 4*alpha^2*||z||^2
+        term3 = 4 * alpha * alpha * (z * z).sum() * tanh_derivative_sq.sum()
+
+        l_smooth = (term1 + term2 + term3) / (P * d)
 
         # === L_align: alignment loss (Equation 30) ===
-        W_m = W_mod.mean(dim=0)  # [d]
+        # W_mod.mean(dim=0) = W_fixed.mean(dim=0) + α z
+        W_m = mapping_net.W_fixed_mean + mapping_net.alpha * z  # [d]
         cos_sim = F.cosine_similarity(z.unsqueeze(0), W_m.unsqueeze(0))
         l_align = 1 - cos_sim.squeeze()
 

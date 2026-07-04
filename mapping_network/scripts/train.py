@@ -94,7 +94,8 @@ def main():
             target_net.get_total_params(),
             cfg['latent_dim'],
             alpha=cfg.get('alpha', 0.01),
-        ).to(device)
+            device=device,
+        )
         print(f'Latent dim: {cfg["latent_dim"]}')
         print(f'Trainable: {sum(p.numel() for p in mapping.parameters() if p.requires_grad):,}')
         print(f'Fixed mapping weights: {mapping.W_fixed.numel():,}')

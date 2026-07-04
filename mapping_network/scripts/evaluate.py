@@ -124,8 +124,8 @@ def main():
             dim = layer_dims.get(name, 64) if isinstance(layer_dims, dict) else 64
             alpha = layer_alphas.get(name, cfg.get('alpha', 0.01)) if isinstance(layer_alphas, dict) else cfg.get('alpha', 0.01)
             mappings[name] = MappingNetwork(
-                group_size, dim, alpha=alpha
-            ).to(device)
+                group_size, dim, alpha=alpha, device=device
+            )
 
         for name, mapping in mappings.items():
             if name in state_dict:
@@ -140,7 +140,8 @@ def main():
             target_net.get_total_params(),
             latent_dim,
             alpha=alpha,
-        ).to(device)
+            device=device,
+        )
         mapping.load_state_dict(state_dict)
         acc = evaluate_slvt(mapping, target_net, test_loader, device)
 

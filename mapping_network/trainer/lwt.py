@@ -64,8 +64,8 @@ class LWTTrainer:
             dim = layer_latent_dims.get(group_name, 64)
             alpha = layer_alphas.get(group_name, 0.01) if layer_alphas else 0.01
             self.layer_mappings[group_name] = MappingNetwork(
-                group_size, dim, alpha=alpha,
-            ).to(device)
+                group_size, dim, alpha=alpha, device=device,
+            )
 
         # Collect trainable params: all z's + loss lambda params
         trainable_params = [
@@ -149,21 +149,30 @@ class LWTTrainer:
             z_l = mapping.z
             start, end = offsets[group_name]
 
-            # L_smooth^(l): ||nabla_z M^(l)(z^(l))||^2_F / P_l
-            def mapping_fn(z_in):
-                # 代数展开避免 vmap 时广播出 [B, P, d] 大中间张量
-                return torch.tanh(
-                    z_in @ mapping.W_fixed.T
-                    + mapping.alpha * (z_in * z_in).sum(dim=-1, keepdim=True)
-                    + mapping.b_fixed
-                )
+            # L_smooth^(l): ||nabla_z M^(l)(z^(l))||^2_F / (P_l * d_l)
+            # 分项计算，避免产生 [P_l, d_l] 中间张量。
+            P_l, d_l = mapping.P, mapping.d
+            alpha_l = mapping.alpha
+            W_fixed_l = mapping.W_fixed
+            b_fixed_l = mapping.b_fixed
 
-            jac = torch.func.jacfwd(mapping_fn)(z_l)
-            l_smooth_total = l_smooth_total + torch.sum(jac ** 2) / jac.numel()
+            a_l = W_fixed_l @ z_l + alpha_l * (z_l * z_l).sum() + b_fixed_l
+            tanh_derivative_sq_l = (1 - torch.tanh(a_l) ** 2) ** 2
+
+            row_norms_sq_l = torch.zeros(P_l, device=z_l.device, dtype=z_l.dtype)
+            chunk_size = 10000
+            for chunk_start in range(0, P_l, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, P_l)
+                row_norms_sq_l[chunk_start:chunk_end] = (W_fixed_l[chunk_start:chunk_end] ** 2).sum(dim=1)
+            term1_l = (tanh_derivative_sq_l * row_norms_sq_l).sum()
+            term2_l = 4 * alpha_l * (z_l * (W_fixed_l.T @ tanh_derivative_sq_l)).sum()
+            term3_l = 4 * alpha_l * alpha_l * (z_l * z_l).sum() * tanh_derivative_sq_l.sum()
+            l_smooth_l = (term1_l + term2_l + term3_l) / (P_l * d_l)
+            l_smooth_total = l_smooth_total + l_smooth_l
 
             # L_align^(l): 1 - cos(z^(l), mean(W_mod^(l)))
-            W_mod = mapping.W_fixed + mapping.alpha * z_l.unsqueeze(0)
-            W_m = W_mod.mean(dim=0)
+            # W_mod.mean(dim=0) = W_fixed.mean(dim=0) + α z_l
+            W_m = mapping.W_fixed_mean + mapping.alpha * z_l
             cos_sim = F.cosine_similarity(z_l.unsqueeze(0), W_m.unsqueeze(0))
             l_align_total = l_align_total + (1 - cos_sim.squeeze())
 
