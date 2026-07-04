@@ -72,7 +72,6 @@ class SLVTTrainer:
             with torch.no_grad():
                 W_mod_noisy = self.mapping_net.W_fixed + self.mapping_net.alpha * z_noisy.unsqueeze(0)
                 theta_noisy = torch.tanh(W_mod_noisy @ z_noisy + self.mapping_net.b_fixed)
-            theta_noisy.requires_grad_(True)
 
             # 3. 计算损失 (函数式前向)
             loss, losses_dict = self.loss_fn(
@@ -80,18 +79,19 @@ class SLVTTrainer:
                 self.mapping_net, self.target_net, x, y,
             )
 
-            # 4. 反向传播
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-
-            total_loss += loss.item()
-            # 准确率：使用当前的 theta_hat，在 optimizer.step() 之前
+            # 4. 计算准确率（在 optimizer.step() 之前，使用当前 theta_hat）
             with torch.no_grad():
                 y_hat = self.target_net.functional_forward(x, theta_hat)
                 _, predicted = y_hat.max(1)
                 total += y.size(0)
                 correct += predicted.eq(y).sum().item()
+
+            # 5. 反向传播
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            total_loss += loss.item()
 
             if batch_idx % self.log_interval == 0:
                 pbar.set_postfix({
