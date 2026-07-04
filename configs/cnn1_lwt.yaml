@@ -1,0 +1,28 @@
+target_net: cnn1
+training_strategy: lwt
+batch_size: 64
+epochs: 30
+seed: 42
+optimizer: adamw
+lr: 0.001
+weight_decay: 0.0001
+scheduler: cosine_annealing
+min_lr: 0.00001
+alpha: 0.01
+layer_latent_dims:
+  conv1: 256
+  conv2: 256
+  fc1: 256
+  fc2: 256
+layer_alphas:
+  conv1: 0.01
+  conv2: 0.01
+  fc1: 0.01
+  fc2: 0.01
+lambda_st_init: 0.1
+lambda_sm_init: 0.1
+lambda_al_init: 0.1
+sigma_noise: 0.01
+device: cuda
+log_interval: 100
+checkpoint_dir: checkpoints
