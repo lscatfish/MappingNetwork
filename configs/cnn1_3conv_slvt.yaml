@@ -1,7 +1,7 @@
 # configs/cnn1_3conv_slvt.yaml
 target_net: cnn1_3conv
 training_strategy: slvt
-latent_dim: 32394
+latent_dim: 1024
 batch_size: 64
 epochs: 30
 seed: 42

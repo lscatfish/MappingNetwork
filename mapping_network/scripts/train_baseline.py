@@ -36,7 +36,7 @@ def main():
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
-    device = args.device if torch.cuda.is_available() else 'cpu'
+    device = args.device if args.device else ('cuda' if torch.cuda.is_available() else 'cpu')
 
     transform = transforms.Compose([
         transforms.ToTensor(),
