@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -266,7 +267,7 @@ class LWTTrainer:
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'lwt'),
-            'layer_generator_configs': self.layer_generators,
+            'layer_generator_configs': copy.deepcopy(self.layer_generators),
             'layer_group_order': self.layer_group_order,
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
             'alpha': self.checkpoint_metadata.get('alpha'),
