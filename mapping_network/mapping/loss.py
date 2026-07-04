@@ -24,7 +24,7 @@ class MappingLoss(nn.Module):
             z: latent vector [d]
             theta_hat: current theta_hat [P] (with gradient)
             theta_noisy: noise-perturbed theta_hat [P] (with gradient, used for L_stab)
-            mapping_net: MappingNetwork instance
+            mapping_net: LinearMappingNetwork instance
             target_net: target network
             x: input [B, 1, 28, 28]
             y: labels [B]

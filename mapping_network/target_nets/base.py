@@ -31,8 +31,10 @@ class _ParamSlice:
 class TargetNet(nn.Module):
     """目标网络基类，支持 LRD。"""
 
-    def __init__(self, lrd_config: LRDConfig | None = None):
+    def __init__(self, lrd_config: LRDConfig | dict | None = None):
         super().__init__()
+        if isinstance(lrd_config, dict):
+            lrd_config = LRDConfig(**lrd_config)
         self._lrd_config = lrd_config if lrd_config is not None else LRDConfig()
         self._param_slices = []
 
