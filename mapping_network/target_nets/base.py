@@ -68,8 +68,11 @@ class TargetNet(nn.Module):
             bias_numel = bias_param.numel() if bias_param is not None else shape[0]
 
             module = self.get_submodule(base)
-            if (not is_bias and isinstance(module, nn.Linear) and
-                    self._should_use_lrd(base, total_params)):
+            if (
+                not is_bias
+                and isinstance(module, nn.Linear)
+                and self._should_use_lrd(base, total_params)
+            ):
                 m, n = shape
                 rank = self._lrd_config.layer_ranks.get(base, self._lrd_config.default_rank)
                 rank = min(rank, m, n)
@@ -78,23 +81,35 @@ class TargetNet(nn.Module):
                 v_start, v_end = u_end, u_end + n * rank
                 b_start, b_end = v_end, v_end + bias_numel
 
-                self._param_slices.append(_ParamSlice(
-                    kind='lrd',
-                    weight_name=name,
-                    bias_name=bias_name,
-                    u_start=u_start, u_end=u_end, u_shape=(m, rank),
-                    v_start=v_start, v_end=v_end, v_shape=(n, rank),
-                    b_start=b_start, b_end=b_end,
-                    b_shape=bias_shape,
-                ))
+                self._param_slices.append(
+                    _ParamSlice(
+                        kind='lrd',
+                        weight_name=name,
+                        bias_name=bias_name,
+                        u_start=u_start,
+                        u_end=u_end,
+                        u_shape=(m, rank),
+                        v_start=v_start,
+                        v_end=v_end,
+                        v_shape=(n, rank),
+                        b_start=b_start,
+                        b_end=b_end,
+                        b_shape=bias_shape,
+                    )
+                )
                 processed_bias.add(bias_name)
                 idx = b_end
             else:
-                self._param_slices.append(_ParamSlice(
-                    kind='full',
-                    start=idx, end=idx + numel,
-                    shape=shape, name=name, is_bias=is_bias,
-                ))
+                self._param_slices.append(
+                    _ParamSlice(
+                        kind='full',
+                        start=idx,
+                        end=idx + numel,
+                        shape=shape,
+                        name=name,
+                        is_bias=is_bias,
+                    )
+                )
                 idx += numel
 
     def get_param_slices(self):
@@ -136,12 +151,12 @@ class TargetNet(nn.Module):
         params = {}
         for s in self._param_slices:
             if s.kind == 'full':
-                params[s.name] = theta_hat[s.start:s.end].reshape(s.shape)
+                params[s.name] = theta_hat[s.start : s.end].reshape(s.shape)
             elif s.kind == 'lrd':
-                U = theta_hat[s.u_start:s.u_end].reshape(s.u_shape)
-                V = theta_hat[s.v_start:s.v_end].reshape(s.v_shape)
+                U = theta_hat[s.u_start : s.u_end].reshape(s.u_shape)
+                V = theta_hat[s.v_start : s.v_end].reshape(s.v_shape)
                 params[s.weight_name] = U @ V.T
-                params[s.bias_name] = theta_hat[s.b_start:s.b_end].reshape(s.b_shape)
+                params[s.bias_name] = theta_hat[s.b_start : s.b_end].reshape(s.b_shape)
         return self._functional_forward(x, params)
 
     def _functional_forward(self, x, params):

@@ -1,8 +1,10 @@
 """Tests for LWT trainer — runs on both CPU and GPU."""
 
-import pytest
+import os
+
 import torch
 from torch.utils.data import DataLoader, TensorDataset
+
 from mapping_network.mapping.loss import MappingLoss
 from mapping_network.target_nets.cnn2 import CNN2
 from mapping_network.trainer.lwt import LWTTrainer
@@ -19,23 +21,28 @@ class TestLWT:
         dataset = TensorDataset(x.cpu(), y.cpu())  # DataLoader 需要 CPU 张量
         loader = DataLoader(dataset, batch_size=8)
 
-        layer_dims = {
-            'conv1': 16,
-            'conv2': 16,
-            'fc1': 16,
-            'fc2': 16,
+        layer_generators = {
+            'conv1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+            'conv2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+            'fc1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+            'fc2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
         }
 
         trainer = LWTTrainer(
-            target, loss_fn, layer_latent_dims=layer_dims,
-            train_loader=loader, epochs=1, device=device, log_interval=1,
-            checkpoint_dir='/tmp/test_lwt', experiment_name='test_lwt',
+            target,
+            loss_fn,
+            layer_generators=layer_generators,
+            train_loader=loader,
+            epochs=1,
+            device=device,
+            log_interval=1,
+            checkpoint_dir='/tmp/test_lwt',
+            experiment_name='test_lwt',
         )
 
         # 记录各层 z 的初始值
         z_before = {
-            name: mapping.z.data.clone()
-            for name, mapping in trainer.layer_mappings.items()
+            name: mapping.z.data.clone() for name, mapping in trainer.layer_mappings.items()
         }
 
         results = trainer.train()
@@ -43,12 +50,12 @@ class TestLWT:
 
         # 验证每层 z 都已更新，且所有参数在正确设备上
         for name, mapping in trainer.layer_mappings.items():
-            assert not torch.equal(z_before[name].cpu(), mapping.z.data.cpu()), \
+            assert not torch.equal(z_before[name].cpu(), mapping.z.data.cpu()), (
                 f'Layer {name} z was not updated!'
+            )
             assert next(mapping.parameters()).device.type == device
 
         # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
-        import os
         checkpoint_path = os.path.join('/tmp/test_lwt', 'test_lwt_final.pth')
         assert os.path.exists(checkpoint_path)
         ckpt = torch.load(checkpoint_path, map_location='cpu')
@@ -56,5 +63,46 @@ class TestLWT:
         assert 'state_dict' in ckpt
         assert 'target_net' in ckpt
         assert 'training_strategy' in ckpt
-        assert 'layer_latent_dims' in ckpt
+        assert 'layer_generator_configs' in ckpt
+        assert 'layer_group_order' in ckpt
         assert ckpt['training_strategy'] == 'lwt'
+
+
+def test_lwt_per_layer_config(device='cuda'):
+    if not torch.cuda.is_available():
+        device = 'cpu'
+    target_net = CNN2(lrd_config={'enabled': True, 'default_rank': 10}).to(device)
+    loss_fn = MappingLoss(sigma_noise=0.01).to(device)
+    x = torch.randn(1, 1, 28, 28, device=device)
+    y = torch.tensor([0], device=device)
+    loader = DataLoader(TensorDataset(x, y), batch_size=1)
+    layer_generators = {
+        'conv1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+        'conv2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+        'fc1': {'type': 'linear', 'latent_dim': 32, 'alpha': 0.01},
+        'fc2': {'type': 'linear', 'latent_dim': 8, 'alpha': 0.01},
+    }
+    trainer = LWTTrainer(
+        target_net,
+        loss_fn,
+        layer_generators,
+        train_loader=loader,
+        test_loader=loader,
+        lr=0.001,
+        weight_decay=0.0001,
+        epochs=1,
+        device=device,
+        log_interval=1,
+        checkpoint_dir='/tmp/test_lwt',
+        experiment_name='test',
+        checkpoint_metadata={
+            'target_net': 'cnn2',
+            'training_strategy': 'lwt',
+            'lrd_config': {'enabled': True, 'default_rank': 10},
+            'sigma_noise': 0.01,
+        },
+        save_interval=0,
+    )
+    trainer.train_epoch(1)
+    total_z = sum(m.d for m in trainer.layer_mappings.values())
+    assert total_z == 16 + 16 + 32 + 8

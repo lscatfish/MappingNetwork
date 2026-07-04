@@ -1,14 +1,17 @@
-import os
 import json
 import logging
+import os
+
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
+import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
-import tqdm
-from ..mapping.mapping_net import MappingNetwork
+
+from ..factory import build_generator
+from ..generators.base import ParameterGenerator
 
 
 class LWTTrainer:
@@ -16,15 +19,14 @@ class LWTTrainer:
     Layer-wise Training (LWT / Ours†).
 
     Each layer/group of the target network gets its own latent vector z^(l)
-    and MappingNetwork^(l). All layer losses are computed independently and aggregated.
+    and ParameterGenerator^(l). All layer losses are computed independently and aggregated.
     """
 
     def __init__(
         self,
         target_net,
         loss_fn,
-        layer_latent_dims: dict,
-        layer_alphas: dict = None,
+        layer_generators: dict,
         train_loader: DataLoader = None,
         test_loader: DataLoader = None,
         lr: float = 0.001,
@@ -54,17 +56,26 @@ class LWTTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.logger = self._setup_logger()
 
-        # Group target network parameters by layer name prefix
-        self.param_groups = self._build_param_groups(target_net)
+        # Build layer order and compressed group sizes from the LRD-enabled target net
+        self.layer_group_order = target_net.get_group_names()
+        self.param_groups = [
+            (name, target_net.get_group_param_size(name)) for name in self.layer_group_order
+        ]
 
-        # Create one MappingNetwork per layer/group using ModuleDict
+        # Create one ParameterGenerator per layer/group using ModuleDict
         # so .to(device) propagates to all sub-modules
-        self.layer_mappings = nn.ModuleDict()
+        self.layer_generators = layer_generators
+        self.layer_mappings: nn.ModuleDict[str, ParameterGenerator] = nn.ModuleDict()
         for group_name, group_size in self.param_groups:
-            dim = layer_latent_dims.get(group_name, 64)
-            alpha = layer_alphas.get(group_name, 0.01) if layer_alphas else 0.01
-            self.layer_mappings[group_name] = MappingNetwork(
-                group_size, dim, alpha=alpha, device=device,
+            if group_name not in layer_generators:
+                raise ValueError(f'Missing generator config for layer group: {group_name}')
+            config = layer_generators[group_name]
+            self.layer_mappings[group_name] = build_generator(
+                config['type'],
+                group_size,
+                config['latent_dim'],
+                alpha=config['alpha'],
+                device=device,
             )
 
         # Collect trainable params: all z's + loss lambda params
@@ -85,9 +96,7 @@ class LWTTrainer:
         logger.setLevel(logging.INFO)
         logger.handlers = []
 
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
@@ -99,20 +108,6 @@ class LWTTrainer:
         logger.addHandler(file_handler)
 
         return logger
-
-    @staticmethod
-    def _build_param_groups(target_net):
-        """Group target net params by layer name prefix. Returns [(name, total_size), ...].
-
-        Example: 'conv1.weight' and 'conv1.bias' both map to group 'conv1'.
-        """
-        groups = {}
-        for name, param in target_net.named_parameters():
-            base = name.split('.')[0]
-            if base not in groups:
-                groups[base] = 0
-            groups[base] += param.numel()
-        return list(groups.items())
 
     def _generate_all_theta(self):
         """Concatenate all per-layer mapping outputs into full theta_hat.
@@ -163,7 +158,9 @@ class LWTTrainer:
             chunk_size = 10000
             for chunk_start in range(0, P_l, chunk_size):
                 chunk_end = min(chunk_start + chunk_size, P_l)
-                row_norms_sq_l[chunk_start:chunk_end] = (W_fixed_l[chunk_start:chunk_end] ** 2).sum(dim=1)
+                row_norms_sq_l[chunk_start:chunk_end] = (W_fixed_l[chunk_start:chunk_end] ** 2).sum(
+                    dim=1
+                )
             term1_l = (tanh_derivative_sq_l * row_norms_sq_l).sum()
             term2_l = 4 * alpha_l * (z_l * (W_fixed_l.T @ tanh_derivative_sq_l)).sum()
             term3_l = 4 * alpha_l * alpha_l * (z_l * z_l).sum() * tanh_derivative_sq_l.sum()
@@ -232,12 +229,14 @@ class LWTTrainer:
             correct += predicted.eq(y).sum().item()
 
             if batch_idx % self.log_interval == 0:
-                pbar.set_postfix({
-                    'loss': f'{loss.item():.4f}',
-                    'acc': f'{100. * correct / total:.2f}%',
-                })
+                pbar.set_postfix(
+                    {
+                        'loss': f'{loss.item():.4f}',
+                        'acc': f'{100.0 * correct / total:.2f}%',
+                    }
+                )
 
-        return total_loss / len(self.train_loader), 100. * correct / total
+        return total_loss / len(self.train_loader), 100.0 * correct / total
 
     @torch.no_grad()
     def evaluate(self):
@@ -258,7 +257,7 @@ class LWTTrainer:
             total += y.size(0)
             correct += predicted.eq(y).sum().item()
 
-        return 100. * correct / total
+        return 100.0 * correct / total
 
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
@@ -267,13 +266,13 @@ class LWTTrainer:
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'lwt'),
-            'layer_latent_dims': self.checkpoint_metadata.get('layer_latent_dims'),
-            'layer_alphas': self.checkpoint_metadata.get('layer_alphas'),
+            'layer_generator_configs': self.layer_generators,
+            'layer_group_order': self.layer_group_order,
+            'lrd_config': self.checkpoint_metadata.get('lrd_config'),
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'state_dict': {
-                name: mapping.state_dict()
-                for name, mapping in self.layer_mappings.items()
+                name: mapping.state_dict() for name, mapping in self.layer_mappings.items()
             },
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
@@ -300,31 +299,31 @@ class LWTTrainer:
             test_acc = self.evaluate() if self.test_loader is not None else None
             self.scheduler.step()
             current_lr = self.scheduler.get_last_lr()[0]
-            results.append({
-                'epoch': epoch,
-                'train_loss': train_loss,
-                'train_acc': train_acc,
-                'test_acc': test_acc,
-                'lr': current_lr,
-            })
+            results.append(
+                {
+                    'epoch': epoch,
+                    'train_loss': train_loss,
+                    'train_acc': train_acc,
+                    'test_acc': test_acc,
+                    'lr': current_lr,
+                }
+            )
             test_acc_str = f'{test_acc:.2f}%' if test_acc is not None else 'N/A'
-            msg = (f'Epoch {epoch}: train_loss={train_loss:.4f}, '
-                   f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}')
+            msg = (
+                f'Epoch {epoch}: train_loss={train_loss:.4f}, '
+                f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}'
+            )
             self.logger.info(msg)
 
             # 保存中间模型
             if self.save_interval > 0 and epoch % self.save_interval == 0:
-                inter_path = self.save_checkpoint(
-                    results, suffix=f'_epoch{epoch}', epoch=epoch
-                )
+                inter_path = self.save_checkpoint(results, suffix=f'_epoch{epoch}', epoch=epoch)
                 self.logger.info(f'Intermediate checkpoint saved to {inter_path}')
 
             # 保存最优模型
             if test_acc is not None and test_acc > self.best_test_acc:
                 self.best_test_acc = test_acc
-                best_path = self.save_checkpoint(
-                    results, suffix='_best', epoch=epoch, is_best=True
-                )
+                best_path = self.save_checkpoint(results, suffix='_best', epoch=epoch, is_best=True)
                 self.logger.info(f'New best test_acc={test_acc:.2f}%, saved to {best_path}')
 
         final_path = self.save_checkpoint(results, suffix='_final', epoch=self.epochs)
