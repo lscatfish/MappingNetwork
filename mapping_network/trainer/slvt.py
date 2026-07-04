@@ -30,6 +30,7 @@ class SLVTTrainer:
         log_interval: int = 100,
         checkpoint_dir: str = 'checkpoints',
         experiment_name: str = 'slvt',
+        checkpoint_metadata: dict = None,
     ):
         self.mapping_net = mapping_net.to(device)
         self.target_net = target_net.to(device)
@@ -41,6 +42,7 @@ class SLVTTrainer:
         self.log_interval = log_interval
         self.checkpoint_dir = checkpoint_dir
         self.experiment_name = experiment_name
+        self.checkpoint_metadata = checkpoint_metadata or {}
 
         # 只更新 z 和 λ (MappingNet 权重固定)
         trainable_params = [
@@ -123,7 +125,18 @@ class SLVTTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         suffix = f"_epoch{epoch}" if epoch else "_final"
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
-        torch.save(self.mapping_net.state_dict(), path)
+
+        checkpoint = {
+            'target_net': self.checkpoint_metadata.get('target_net'),
+            'training_strategy': self.checkpoint_metadata.get('training_strategy', 'slvt'),
+            'latent_dim': self.checkpoint_metadata.get('latent_dim'),
+            'alpha': self.checkpoint_metadata.get('alpha'),
+            'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
+            'state_dict': self.mapping_net.state_dict(),
+            'results': results,
+            'epoch': epoch if epoch is not None else self.epochs,
+        }
+        torch.save(checkpoint, path)
 
         # 同时保存结果
         results_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}_results.json')

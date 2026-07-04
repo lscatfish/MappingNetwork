@@ -35,3 +35,17 @@ class TestSLVT:
         assert not torch.equal(z_before.cpu(), mapping.z.data.cpu())
         # 确保所有模型参数在正确设备上
         assert next(mapping.parameters()).device.type == device
+
+        # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
+        import os
+        checkpoint_path = os.path.join(
+            '/tmp/test_slvt_checkpoints', 'test_slvt_final.pth'
+        )
+        assert os.path.exists(checkpoint_path)
+        ckpt = torch.load(checkpoint_path, map_location='cpu')
+        assert isinstance(ckpt, dict)
+        assert 'state_dict' in ckpt
+        assert 'target_net' in ckpt
+        assert 'training_strategy' in ckpt
+        assert 'latent_dim' in ckpt
+        assert ckpt['training_strategy'] == 'slvt'

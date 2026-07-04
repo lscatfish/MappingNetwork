@@ -46,3 +46,15 @@ class TestLWT:
             assert not torch.equal(z_before[name].cpu(), mapping.z.data.cpu()), \
                 f'Layer {name} z was not updated!'
             assert next(mapping.parameters()).device.type == device
+
+        # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
+        import os
+        checkpoint_path = os.path.join('/tmp/test_lwt', 'test_lwt_final.pth')
+        assert os.path.exists(checkpoint_path)
+        ckpt = torch.load(checkpoint_path, map_location='cpu')
+        assert isinstance(ckpt, dict)
+        assert 'state_dict' in ckpt
+        assert 'target_net' in ckpt
+        assert 'training_strategy' in ckpt
+        assert 'layer_latent_dims' in ckpt
+        assert ckpt['training_strategy'] == 'lwt'
