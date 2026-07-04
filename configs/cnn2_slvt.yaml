@@ -1,7 +1,7 @@
 target_net: cnn2
 training_strategy: slvt
 latent_dim: 2048
-batch_size: 64
+batch_size: 32
 epochs: 16
 seed: 42
 optimizer: adamw
