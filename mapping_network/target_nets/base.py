@@ -8,7 +8,7 @@ class TargetNet(nn.Module):
 
     提供两套前向接口：
     - forward(x): 标准模块前向（用于基线训练）
-    - functional_forward(x, theta_hat, slices): 函数式前向（用于 Mapping Network），
+    - functional_forward(x, theta_hat): 函数式前向（用于 Mapping Network），
       直接从 theta_hat 切片 reshape 为权重，保持 autograd 梯度链完整。
     """
 
