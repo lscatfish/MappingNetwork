@@ -27,7 +27,7 @@ class TestLWT:
         }
 
         trainer = LWTTrainer(
-            target, loss_fn, layer_dims,
+            target, loss_fn, layer_latent_dims=layer_dims,
             train_loader=loader, epochs=1, device=device, log_interval=1,
             checkpoint_dir='/tmp/test_lwt', experiment_name='test_lwt',
         )

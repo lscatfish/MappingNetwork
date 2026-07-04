@@ -22,7 +22,8 @@ class LWTTrainer:
         self,
         target_net,
         loss_fn,
-        layer_dims: dict,
+        layer_latent_dims: dict,
+        layer_alphas: dict = None,
         train_loader: DataLoader = None,
         test_loader: DataLoader = None,
         lr: float = 0.001,
@@ -51,9 +52,10 @@ class LWTTrainer:
         # so .to(device) propagates to all sub-modules
         self.layer_mappings = nn.ModuleDict()
         for group_name, group_size in self.param_groups:
-            dim = layer_dims.get(group_name, 64)
+            dim = layer_latent_dims.get(group_name, 64)
+            alpha = layer_alphas.get(group_name, 0.01) if layer_alphas else 0.01
             self.layer_mappings[group_name] = MappingNetwork(
-                group_size, dim,
+                group_size, dim, alpha=alpha,
             ).to(device)
 
         # Collect trainable params: all z's + loss lambda params
@@ -136,9 +138,8 @@ class LWTTrainer:
             # L_stab^(l): noise perturbation on z^(l)
             eps = torch.randn_like(z_l) * self.loss_fn.sigma_noise
             z_noisy_l = z_l + eps
-            with torch.no_grad():
-                W_mod_n = mapping.W_fixed + mapping.alpha * z_noisy_l.unsqueeze(0)
-                theta_noisy_l = torch.tanh(W_mod_n @ z_noisy_l + mapping.b_fixed)
+            W_mod_n = mapping.W_fixed + mapping.alpha * z_noisy_l.unsqueeze(0)
+            theta_noisy_l = torch.tanh(W_mod_n @ z_noisy_l + mapping.b_fixed)
             # Replace this layer's slice in the full theta
             theta_noisy = theta_hat.clone()
             theta_noisy[start:end] = theta_noisy_l
