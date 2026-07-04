@@ -1,0 +1,1276 @@
+Mapping Networks
+Lord Sen
+Shyamapada Mukherjee
+National Institute of Technology Rourkela
+Odisha, India
+lordsen3008@gmail.com
+
+Target Network is Trained
+
+Abstract
+The escalating parameter counts in modern deep learning
+models pose a fundamental challenge to efficient training
+and resolution of overfitting. We address this by introducing
+the Mapping Networks which replace the high dimensional
+weight space by a compact, trainable latent vector based on
+the hypothesis that the trained parameters of large networks
+reside on smooth, low-dimensional manifolds. Henceforth,
+the Mapping Theorem enforced by a dedicated Mapping
+Loss, shows the existence of a mapping from this latent
+space to the target weight space both theoretically and in
+practice. Mapping Networks significantly reduce overfitting
+and achieve comparable to better performance than target network across complex vision and sequence tasks, including Image Classification, Deepfake Detection etc, with
+99.5%, i.e., around 500× reduction in trainable parameters.
+
+Pruning
+
+MeIDOL
+[16]
+
+Quantization
+During Training
+of Target Network
+
+LRD
+
+Lottery Tickit
+
+[2]
+
+[5]
+
+[11]
+[1]
+
+QAT
+HyperNEAT
+
+Internal
+Reduction
+
+Ours + LRD
++ Pruning
+
+Inference Focused
+
+Ours + LRD
+Ours
+
+No Training of
+Target Network
+
+External
+Reduction
+
+Training Focused
+
+Utilizes the Manifolds to improve training or Inference
+
+TrELdM
+[18]
+[10]
+Only Manifold
+Existence
+
+Directly or Indirectly deals with existence of Manifolds in Parameter Space
+
+Figure 1. State of the Existing Works and Ours in this field
+
+timizing and tracking such huge parameter spaces, which
+often hinders explainability and leads to overfitting.
+This necessitates the search for more efficient training
+methods. In order to improve the training, we have mainly
+two choices: (1) Decrease the training time, (2) Decrease
+the trainable parameters. The first can be addressed by
+distributed training across multiple GPUs. The second is
+also important as it reduces the chances of overfitting, increases generalization and reduces the black box nature of
+the model.
+In this context, manifold hypothesis [7], [19] solves the
+big data problem by assuming high dimensional data to lie
+on or near a low dimensional manifold. Mathematically, for
+x ∈ X the high dimensional input space in RD , ∃ M, a low
+dimensional manifold, such that, M ⊂ X with dimension
+d = dim(M) ≪ D. Then by manifold hypothesis neural
+networks learn a function,
+
+1. Introduction
+The universal approximation theorem (UAT) states that neural networks with a certain structure can, in principle, approximate any continuous function to any desired degree of
+accuracy. Today deep learning is characterized not only by
+big data but also by big models, with trainable parameters
+ranging from millions to trillions. The training of such a
+⃗ is optimization
+network f , with inputs xi and parameters θ,
+of the loss function,
+N
+
+1 X
+L(fθ⃗ (xi ), yi ),
+N i=1
+
+Post Training
+of Target Network
+
+HyperNetworks
+
+Not Trained
+
+arXiv:2602.19134v1 [cs.CV] 22 Feb 2026
+
+mukherjees@nitrkl.ac.in
+
+(1)
+
+fθ : M → Y.
+
+⃗ As these networks grow
+via gradient descent to update θ.
+in size and complexity, it’s training becomes more challenging, computation intensive, time consuming and costly.
+This difficulty stems from two main issues: (1) training
+these networks from scratch, and (2) the complexity of op-
+
+(2)
+
+In this regard, we have analyzed the parameter space in
+search of existence of manifolds, around which the trained
+parameters might be centered. The theory behind our approach is deeply rooted in the study of the geometry of
+1
+
+the parameter space. Research on the shape of the loss
+landscape shows that network weights effectively lie within
+low-dimensional regions, i.e., have less intrinsic dimension
+[16]. Supporting this, detailed second-order studies of deep
+linear networks [1] have found important low-dimensional
+valleys in the error function. This is further supported by
+empirical studies demonstrating that the training trajectories of diverse deep networks converge and reside within
+a shared, intrinsic low-dimensional manifold [18], same is
+supported by our Fig. 2a, 2b. Similar, conclusions can be
+drawn from [11], [5], [10] which suggests the existence of
+manifolds. This is utilized to direct the training trajectory in
+large flat regions of the energy landscape in [2]. Various inference weight reduction techniques like Pruning [20], Lottery Ticket hypothesis [9] effectively exploit a similar idea
+as in Figure 1.
+Other techniques such as Low-Rank Compression [14]
+reduce redundancy by applying post-training factorization
+(like SVD) or imposing algebraic constraints W ≈ U V ⊤
+on individual weight matrices [6]. However, these methods operate directly on the high-dimensional weight tensors, either through external compression or a priori linear
+constraints. A method of predicting the remaining weight
+values from few given weights of each feature is presented
+in [4]. Other methods for reducing parameters in convolutional networks are shown in [22], [8], [15].
+Our approach is fundamentally different; it is a metaparametrization. We learn a non-linear, differentiable map
+g : Rd → RP that generates the weights from a compact
+latent vector. This simplifies the problem domain from the
+high-dimensional weight space to the low-dimensional latent space, which inherently constrains the search to a structurally efficient manifold. This architectural choice naturally promotes the discovery of flatter, more robust solutions in the effective parameter space, providing a structural
+guarantee of efficiency and stability, placing us in an ideal
+spot in Figure 1 with respect to training.
+In architectural terms, our Mapping Network is a type of
+Hypernetwork [13], a model that generates the weights of a
+target network, which we term as external reduction in Figure 1. But in HyperNetworks both the target network and
+the hyper network are trained together, hence the training of
+the target network cannot be avoided, but not in ours. Also,
+they do not achieve the same degree of trainable parameter
+reduction as we do. Modern hypernetworks [12] often focus
+on generating conditional weights for image analysis tasks,
+enabling rapid adaptation across inputs or tasks but sometimes face issues with stability and guaranteed capacity. We
+explicitly engineer our system to satisfy the analytical requirements of the Mapping Theorem, which is reflected in
+our Mapping Loss (Lmap ) to solve this issue.
+Keeping in mind the constraints of our computational
+resources, we tested our Mapping Networks on modern
+
+CNNs and LSTMs, showcasing results on tasks like image
+classification, image segmentation, and deepfake detection,
+time series predicton on datasets including Celeb-DF, FF++,
+MNIST, FMNIST, Cityscapes etc. while maintaining significantly fewer trainable parameters, than baseline. But,
+the approach being baseline agnostic, can be extended to
+larger models and datasets as well.
+The main contributions of this work are:
+• The Mapping Theorem, which establishes the existence
+of a smooth, low-dimensional parameterization, capable
+of generating the optimal high-dimensional weights for a
+target network with an arbitrarily small bounded error.
+• The Mapping Network, consisting a low-dimensional
+trainable latent Vector and modulated Mapping Weights
+to efficiently produce target network parameters, hence
+decoupling training from target network.
+• The Mapping Loss, which jointly optimizes task performance and enforces the geometric and analytic properties
+required by the Mapping Theorem.
+
+2. Methodology
+Inspired by the Manifold Hypothesis discussed in Section 1,
+we analyze the parameter space in search of existence of
+manifolds, around which the trained parameters might be
+centered. The evolution of neural network parameters during training can be interpreted through the lens of differential geometry as the trajectory of points on a lowdimensional manifold embedded in a high-dimensional parameter space RP . To empirically examine this hypothesis,
+we recorded parameter snapshots of each layer of a small
+convolutional neural network (CNN) trained on MNIST.
+
+(a) PCA plot.
+
+(b) t-SNE plot.
+
+Figure 2. Parameter update snapshots showing distinct parameter
+manifolds in CNN evolution.
+
+The PCA projection in Figure 2a reveals that the parameters corresponding to each layer occupy distinct, smooth,
+and low-dimensional regions in the reduced space. The
+near-linear trajectories within these regions indicate that, locally, each layer’s parameters evolve along approximately
+affine subspaces. Similarly, the t-SNE plot (Figure 2b)
+highlights the nonlinear geometry of these trajectories.
+These observations support the existence of locally Eu2
+
+• a δ > 0,
+• an integer d ≥ d∗ ,
+• a C 2 map g : Rd → RP , and
+• a vector z ∗ ∈ Rd ,
+such that ∥g(z ∗ ) − θ∗ ∥ ≤ δ with
+
+clidean neighborhoods—a necessary condition for a differentiable manifold structure. This indicates that, during optimization, the parameters do not explore the full
+P -dimensional Euclidean space instead evolve along a
+smooth, low-dimensional surface. Which leads us to state
+the weight manifold hypothesis as:
+
+δ :=
+
+ε
+,
+Lℓ Lθ
+
+and therefore
+Weight–Manifold Hypothesis: For the set of neural parameters θ ∈ RP of a network fθ , there exists a differentiable embedded manifold Mθ ⊂ RP , such that d =
+dim(Mθ ) ≪ P and the trained parameters θ ∗ lie on (or
+near) this manifold, meaning all the P values in θ∗ are not
+independent of each other, i.e., θ ∗ ∈ Mθ .
+For the CNN, the plots showing smooth and disjoint
+evolution of each layer’s parameters suggests the existence
+of differentiable embedded sub manifolds layer wise, i.e.,
+(l)
+θ ∗(l) ∈ Mθ . This formulation suggests that optimization
+dynamics implicitly constrain the evolution of parameters
+to a low-dimensional subspace of RP , corresponding to a
+smooth manifold Mθ . The existence of such a differentiable manifold implies the possibility of existence of a differentiable mapping
+g : U → Mθ ⊂ RP ,
+
+where U ⊂ Rd ,
+
+d << P
+
+|L(g(z ∗ )) − L(θ∗ )| ≤ ε.
+
+Proof: From weight manifold hypothesis, we know ∃
+a Mθ , and because Mθ is a C 2 embedded manifold and
+θ∗ ∈ Mθ , by definition there exist:
+∗
+• an open set U ⊂ Rd with 0 ∈ U , and
+• a C 2 diffeomorphism φ : U → V ⊂ Mθ ,
+such that φ(0) = θ∗ and φ(U ) = V , an open neighborhood
+of θ∗ inside Mθ . Since, φ is C 2 , it is continuous at 0.
+Let the given ε > 0 satisfy ε ≤ Lℓ Lθ r, then we define δ
+depending upon ε as,
+δ :=
+
+(3)
+
+∥u − 0∥ < η
+
+0 < δ ≤ r.
+
+(7)
+
+⇒
+
+∥φ(u) − φ(0)∥ < δ.
+
+(8)
+
+⇒
+
+∥φ(u) − θ∗ ∥ < δ.
+
+(9)
+
+That is,
+
+2.1. Mapping Theorem and Practical Corollary
+
+∥u∥ < η
+
+Based on the Hypothesis stated above and under certain assumptions, we will state and prove our mapping theorem.
+Assumptions:
+A1: Smoothness in Parameters: The map θ → fθ (x)
+is Lθ -Lipschitz in parameter form for every x ∈ X :
+∀x
+
+ε
+,
+Lℓ Lθ
+
+Since φ is continuous at 0, the ϵ–δ definition of continuity
+gives, for the chosen δ > 0, there exists η > 0 such that
+
+from a low dimensional space to the parameter space,
+which is presented in Section 2.1.
+
+∥fθ1 (x) − fθ2 (x)∥ ≤ Lθ ∥θ1 − θ2 ∥2 ,
+
+(6)
+
+Since we need to show the existence of a C 2 map g, lets
+pick open sets U ′ ⊂ U with 0 ∈ U ′ and U ′ ⊂ U . Let
+∗
+ψ : Rd → [0, 1] be a smooth bump function satisfying
+ψ ≡ 1 on U ′ and ψ ≡ 0 outside U . Let’s define
+g(u) = ψ(u)φ(u) + (1 − ψ(u))θ∗ .
+
+(4)
+
+(10)
+
+∗
+
+Then g ∈ C 2 (Rd , RP ), g(0) = θ∗ , and g(u) = φ(u) in a
+neighborhood of 0.
+Since, 0 ∈ U and φ(0) = θ∗ , we have g(0) = θ∗ . Furthermore, by (1) we know any u with ∥u∥ < η (and u ∈ U )
+satisfies ∥g(u) − θ∗ ∥ < δ. Therefore let’s choose,
+
+A2: Loss Lipschitz: The loss L(·, y) is Lℓ -Lipschitz in
+its first argument for each y. Combining with A1, the loss
+difference is controlled by parameter distance:
+|L(θ1 ) − L(θ2 )| ≤ Lℓ Lθ ∥θ1 − θ2 ∥2
+A3: Local Approximability:
+and has bounded curvature.
+
+(5)
+
+z ∗ ∈ B(0, η) ∩ U.
+
+(11)
+
+∥g(z ∗ ) − θ∗ ∥ = ∥φ(z ∗ ) − θ∗ ∥ < δ.
+
+(12)
+
+The manifold Mθ is C 2
+Then by (1),
+
+Theorem (Mapping Theorem). Let the parameters
+θ ∈ RP of a neural network satisfy the Weight-Manifold
+Hypothesis, i.e., the optimal parameters θ∗ lie on a C 2 embedded manifold Mθ of intrinsic dimension d∗ ≪ P . Suppose the loss L : RP → R satisfies the local Lipschitz
+condition, i.e., there exist constants Lθ > 0, Lℓ > 0 and a
+radius r > 0 such that for all θ1 , θ2 ∈ B(θ∗ , r) a sphere centered at θ∗ with radius r, |L(θ1 )−L(θ2 )| ≤ Lℓ Lθ ∥θ1 −θ2 ∥.
+Then for every ε > 0 with ε ≤ Lℓ Lθ r, there exists,
+
+Even exact equality might be achieved by taking z ∗ = 0,
+since, z ∗ = 0 ∈ B(0, η) ∩ U , yields g(z ∗ ) = θ∗ exactly. Now applying the local Lipschitz conditions. Since
+∥g(z ∗ ) − θ∗ ∥ < δ ≤ r, both g(z ∗ ) and θ∗ lie in the ball
+B(θ∗ , r). Hence,
+|L(g(z ∗ )) − L(θ∗ )| ≤ Lℓ Lθ ∥g(z ∗ ) − θ∗ ∥ < Lℓ Lθ δ. (13)
+3
+
+|L(g(z ∗ )) − L(θ∗ )| < ε.
+
+Trainable Latent Vector
+
+By Equation 7 ε = Lℓ Lθ δ, So,
+(14)
+
+This completes the proof: for the given ε, we exhibited
+a δ > 0, d = d∗ , a smooth fixed mapping g, and a latent
+∗
+z ∗ satisfying the required bound. Embedding Rd into Rd
+via (u, 0) 7→ g(u) readily extends the construction to any
+d ≥ d∗ . Hence proved.
+□
+
+and output
+
+Figure 3. General Architecture for Mapping Networks.
+
+2.2. Mapping Network
+Convolutional Neural Networks (CNNs) or in general any
+deep neural networks exhibit remarkable representational
+capacity but at the cost of millions of trainable parameters
+and heavy optimization overhead. To address this, we introduce the Mapping Networks, as shown in Figure 3, a
+meta-learning architecture in which the target network is
+not directly trained. Instead, a trainable latent vector (z)
+and fixed mapping modulated by z, generates the target network’s parameters, which are used for feed-forward only.
+The result is a substantial reduction in trainable parameters
+without compromising accuracy or expressivity as proved
+by the Mapping and Solvability Theorems.
+Let the target network whoose training we want to avoid
+be denoted by fθ (x) where θ = {W (l) , b(l) }L
+l=1 contains
+the weights and biases of all the layers, and x denotes the
+input image or feature sequence.
+The total number of trainPL
+able parameters is P = l=1 (|W (l) | + |b(l) |).
+
+if ∥rθ ∥ ≤ ε, then ∃ ∆z, a constant C > 0 such that,
+
+2.2.1. Trainable Latent Vector
+
+∥∆z∥ = O(∥rθ ∥) and ∥gω (z0 + ∆z) − θ∗ ∥ ≤ C∥rθ ∥2 .
+(16)
+Consequently, by (5),
+
+The latent vector z is made trainable, to allow the model to
+learn an optimal low-dimensional embedding that best captures the target network’s effective parameter distribution.
+The length of the latent vector is determined in relation to
+the target network’s parameterization and is treated as a tunable hyperparameter to achieve optimal performance.
+
+(17)
+
+(2.2) Global extension. For any prescribed tolerance ε > 0
+∃ constants C2 , Lθ , Lℓ , r > 0 and a latent vector z ∗ ∈ Rd ,
+obtainable by gradient-based optimization under standard
+local convergence conditions on L(gω (z)), such that
+∥gω (z ∗ ) − θ∗ ∥ ≤ δ,
+
+Large Network
+
+ŷ
+is trainable parameter to optimize
+
+The Mapping Theorem established the existence of a
+continuous map g that projects a latent variable in a lowdimensional space to a high-dimensional parameter vector
+with arbitrarily small bounded error. The following theorem
+proves that the additive modulation of orthogonally initialized mapping networks with fixed weights and trainable latent vector z—as used in the experiments constitutes one
+such g.
+Theorem 2 (Solvability under additive modulation):
+Let θ∗ ∈ RP , ω0 ∈ RW , z0 ∈ Rd denote respectively the target parameter vector, orthogonally initialized
+weights, and initial latent vector. Let M : Rd → RW be a
+C 2 modulation (M (z) = Bz for our case 2.2.2) modulating
+the fixed mapping weights as ω(z) = ω0 + M (z). Then our
+mapping network is gω (z) := gω(z) (z) ∈ RP is one such g
+which satisfies Mapping Theorem.
+To prove with and without gradient descent we divide the
+statement in two parts:
+(2.1) Local solvability. There exists ε > 0 such that for a
+residual,
+rθ := θ∗ − gω0 (z0 ).
+(15)
+
+|L(gω (z0 + ∆z)) − L(θ∗ )| ≤ Lℓ Lθ C∥rθ ∥2 .
+
+Mapping
+
+2.2.2. Mapping Network with weight modulation
+The latent vector z is processed by a neural network with
+fixed non-trainable orthogonally initialized weights, modulated by z. The modulation is introduced as the fixed
+weights to provide context and prevent the projection being random. The modulation is done by a simple affine
+transformation of the weights of the mapping network as
+in Figure 4. Let the latent vector(z) be of dimension d, with
+elements z0 , z1 , ..zi , ..zd−1 and let wij be the non-trainable
+neural ntworks’s weights connected to zi ∀j = 1, 2, .., P ,
+then wij is modulated as
+
+|L(gω (z ∗ )) − L(θ∗ )| ≤ ε, (18)
+
+where δ = ε/(Lℓ Lθ ). Moreover, the latent displacement
+∆z ∗ := z ∗ − z0 satisfies the bound
+r
+δ
+∗
+,
+(19)
+∥∆z ∥ ≤
+C2
+and this bound holds independently of the residual rθ in
+(15). Detailed proofs are given in the Appendix.
+
+wij ← wij + αzi ,
+4
+
+∀j = 1, 2, .., P
+
+(20)
+
+Calculate Loss
+
+2.2.5. Architecture Add-Ons
+map to main network
+
+Low Rank Decomposition (LRD): The parameter count
+in fully connected layers can be significantly reduced by
+applying low-rank decomposition. For a weight matrix
+W ∈ Rm×n , LRD approximates it as, W ≈ U V ⊤ , where
+U ∈ Rm×r and V ∈ Rn×r with r ≪ min(m, n). This
+reduces the parameter count from mn to r(m + n), which
+can be substantial for large layers. The mapping network
+then generates the smaller matrices U and V instead of the
+W , which makes our approach memory efficient and scale
+to even larger target networks.
+Pruning and Quantization: These techniques being
+completely orthogonal to ours can be easily integrated to
+Mapping Networks to decrease the inference time and ease
+deployment on edge devices as shown in Figure 1.
+
+Minimize Loss
+and update z
+
+....
+....
+}
+
+weights at epoch p
+
+........
+
+}
+Latent vector after
+training at epoch p+1
+
+........
+
+2.2.6. Extension to Fine Tuning
+
+}
+
+Mapping Networks provide a way to fine tune pre-trained
+networks by generating modulation vectors o instead of actual parameters. These modulation vectors can be used to
+tune the pre-trained parameters. Let W denote the pretrained weights and Wf the fraction of weights to be fine
+tuned. Now, a pretrained model generally has a huge parameter count, and generating unique modulation elements
+for each weight will make the mapping network memory
+inefficient, as the fixed mapping weights though not trained
+needs to be stored during training. To solve this, let each
+oi modulate L weights of Wf , then to fine tune P = |Wf |
+parameters, the mapping network generates PL modulation
+elements (o1 , o2 , ..., o P ). This will also help to fine tune enL
+tire network with very less trainable parameters. To understand the formulation, let’s visualize flattened Wf as, wij
+with i = 1, 2, ..., P/L and j = 1, 2, ..., L. The modulation
+occurs as
+
+weights at epoch p+1
+
+Figure 4. Process of modulation of Mapping weights and training
+of latent vector z from epoch p to p+1.
+
+where α is a small modulation scale. Hence, the generated
+parameters can be given by:
+θ̂ = σ(W · z + b),
+
+(21)
+
+where σ(·) denotes activation function. The output θ̂ ∈ RP
+represents a flattened, high-dimensional descriptor of the
+target network’s weight space.
+2.2.3. Mapping to Network’s Parameters
+The output θ̂ is partitioned and reshaped to match the parameter tensors of each layer of the target network. Let
+pl and ql be cumulative indices corresponding to layer l’s
+weights and biases. Then target network’s weights and biases for a layer l can be mapped as,
+
+wij ← wij + α · oi ,
+
+∀j = 1, 2, ..., L
+
+(25)
+
+where α is a small modulation scale. These weights
+along with the frozen ones are used for feed forward of target network in a similar way as in Section 2.2.4. Moreover,
+using Layer wise training (Section 2.4.2), we can set different modulation rates (α′ s) for different layers.
+
+(l)
+
+
+= reshape θ̂[pl : pl + |W (l) |], shape(W (l) ) , (22)
+
+(l)
+bt = reshape θ̂[ql : ql + |b(l) |], shape(b(l) ) .
+(23)
+
+Wt
+
+2.3. Mapping Loss
+
+This deterministic reshaping operation allows g to generate
+a full set of parameters of the target network from a compact
+latent representation, without training the network.
+
+To effectively train our Mapping network, the loss function
+must simultaneously ensure strong downstream task performance and preserve the structural regularity of the parameter manifold, implementing assumptions in our Mapping
+Theorem. We propose a Mapping Loss function:
+
+2.2.4. Target Network for feedforward and Inference
+The Target network then performs standard feed forward
+and inference:
+ŷ = σ(WtT x + bt ),
+(24)
+
+Lmap = Ltask + λst · Lstab + λsm · Lsmooth + λal · Lalign , (26)
+where λstab , λsmooth , λalign are trainable coefficients that
+control the contribution of each regularization term. These
+
+while gradients propagate exclusively through the mapping
+networks.
+5
+
+2.4.1. Single Latent Vector Training (SLVT)
+
+trainable coefficients ensures the mapping network learns to
+balance task performance and regularization adaptively.
+Task Loss: The task loss enforces correct predictions
+for the downstream objective in the target network. For
+classification tasks, we employ cross-entropy:
+Ltask = −
+
+X
+
+yi log ŷi ,
+
+Here, all the parameters of the target network are approximated by a single trainable latent vector and its modulated
+mapping weights as in Figure 5a. But, with increasing size
+of target network, the number of non trainable mapping
+weights will increase, increasing the requirement of system’s RAM.
+
+(27)
+
+i
+
+2.4.2. Layer wise Training (LWT)
+
+where yi is the ground-truth label and ŷi is the predicted
+probability output. This term ensures that the generated
+parameters remain functionally optimal for the target task.
+
+To solve the above problem, for large networks having numerous layers, whose parameters might lie in different manifolds, we use separate smaller latent vectors to approximate
+the parameters of each layer separately as in Figure 5b.
+
+Stability Loss: Stability loss penalizes large output
+changes due to small perturbations in the latent vector z,
+this constraint is introduced to enforce the first assumption
+of our theorem.
+
+
+Lstability = E |fθ′ (z + ϵ) − fθ′ (z)|22 ,
+
+(28)
+
+where fθ′ denotes the target network modulated via the
+mapping Mϕ (z) and ϵ ∼ N (0, σ 2 I). This term enforces
+local Lipschitz continuity in the latent space, making the
+mapping robust to small latent perturbations. It ensures
+small latent perturbations do not induce large output
+deviations.
+
+(a) Full Network training
+by one Latent vector
+(b) Layer wise training by separate latent vectors
+
+Figure 5. Training strategies used for Mapping Network
+
+Smoothness Loss: To guarantee smooth differentiability of the induced parameter manifold, we penalize the Jacobian norm of the mapping Mϕ (z):
+Lsmooth = ∥∇z Mϕ (z)∥2F ,
+
+3. Results
+We have evaluated the performance of our models on various datasets and compared them with baseline methods
+(Full Results in Appendix). The proposed Mapping Networks Ours* and Ours† represent networks trained by Single Latent Vector and Layer wise training respectively.
+
+(29)
+
+where ∥ · ∥F denotes the Frobenius norm. This term enforces C 2 -continuity in the latent-to-parameter transformation, discouraging oscillatory behavior and promoting geometrically consistent transitions in the generated weight
+space.
+Alignment Loss: Maintains compatibility between latent space and mapping weight space, improving generalization.
+(30)
+Lalignment = 1 − cos z, W m ),
+
+3.1. Mapped CNN Results
+We have tested our Mapping CNN on tasks like image classification, deepfake detection, and image segmentation. For
+this, we have chosen three baselines CNN1, 2, 3 variants inspired from AlexNet, Le-Net, U-Net (details of architecture
+in Appendix).
+3.1.1. Image Classification
+
+where W m is the row wise mean of the modulated projection layer weights, and cos(·, ·) denotes cosine similarity.
+This term aligns the latent vector with the target network’s
+dominant weight directions.
+
+Table 1, showcases the test results of our mapping networks
+on image classification across MNIST, Fashion MNIST
+datasets. Baselines CNN1 and CNN2, achieve accuracy
+of 99.32%, 98.69% on MNIST, 92.89%, 90.40% on FMNIST, respectively with 537,994 and 108,618 parameters.
+Our mapping networks surpass accuracy of target CNN1
+with 2072 parameters only, a 260× reduction, and almost
+same accuracy of target CNN2 with 2048 parameters when
+trained using one latent vector. Furthermore, Ours* surpasses baseline CNN1 with 1024 parameters for FMNIST,
+
+2.4. Training
+We partly trained our models on Kaggle’s P100 GPU and
+partly on NVDIA T1000. The datasets MNIST, Fashion
+MNNIST are taken from Pytorch’s datasets. The training
+strategies used are:
+6
+
+achieving a 525× reduction. Moreover, layer wise training
+surpasses both as in Table 1, achieving 99.67% and 94.83%
+accuracy. During training of baseline CNN1 on FMNIST,
+we have got training accuracy 99.10% but the test accuracy
+dropped to 92.89%. On contrast, for the proposed mapping
+networks with 2072 parameters, this drop was just 1.8%
+which is a significant reduction in overfitting.
+
+3.1.3. Image Segmentation
+We have also tested our mapping networks on image segmentation task on the cityscapes dataset [3]. Table 3,
+shows that our mapping networks with just 8192 parameters achieves a pixel accuracy of 97.92% and mIoU of
+0.4623 and Ours† achieves 97.56% and 0.48 mIoU, whereas
+the baseline CNN3 with 1,734,803 parameters achieves a
+pixel accuracy of 93.21% and mIoU of 0.4957. Therefore,
+mapping networks show significant parameter reduction of
+211× while maintaining almost same performance in image
+segmentation tasks.
+
+Table 1. Image Classification with Mapping CNN
+
+Method
+
+# Params
+
+MNIST
+
+FMNIST
+
+CNN1
+
+537,994
+
+99.32%
+
+92.89%
+
+Ours*
+Ours*
+Ours†
+
+1024
+2072
+4078
+
+98.78%
+99.56%
+99.67%
+
+93.02%
+93.91%
+94.83%
+
+Method
+
+# Total
+
+Pixel Acc
+
+Loss
+
+mIoU
+
+CNN2
+
+108,618
+
+98.69%
+
+90.40%
+
+Ours*
+Ours*
+Ours†
+Ours†
+
+1024
+2048
+1872
+2688
+
+97.88%
+98.66%
+98.98%
+99.18%
+
+89.49%
+91.88%
+92.84%
+93.35%
+
+CNN3
+Ours*
+Ours†
+
+1,734,803
+8192
+9126
+
+93.21%
+97.92%
+97.56%
+
+0.1506
+0.1233
+0.1002
+
+0.4957
+0.4623
+0.4823
+
+Table 3. Results on Image Segmentation
+
+3.2. Mapped LSTM Results
+We have tested our Mapping LSTM model on time series
+analysis on an air pollution dataset (Dataset given in supplementary material). The baseline LSTM model achieves
+MSE of 0.0035 with 12961 parameters but Mapping Networks surpass it with just 64 parameters, and scales further
+to 0.00061 with increase in latent size as shown in Table 4.
+
+3.1.2. Deepfake Detection
+We have tested our model on a very important and relevant task of deepfake detection of videos on Celeb-DF[17]
+and FF++[21] dataset. Baseline CNN2 with 108612 trainable parameters gets a test accuracy of 79.03% on CelebDF, whereas our mapping network shows 85.90% accuracy
+with just 2048 trainable parameters as in Table 2. A similar
+improvement is also observed for FF++ dataset. Our Mapping Networks achieve a 5.7% test accuracy improvement
+for CNN1 on Celeb-DF using Full Network training strategy. Layer wise training, increases the performance a bit
+more achieving 86.09% and 86.28% accuracy on Celeb-DF
+and FF++.
+
+Table 4. Mapping LSTM on Air Pollution dataset
+
+# Params
+
+Celeb-DF
+
+FF++
+
+CNN1
+Ours*
+Ours*
+Ours†
+Ours†
+
+537,994
+1024
+2048
+1956
+2792
+
+83.13%
+83.92%
+88.88%
+88.78%
+89.98%
+
+82.44%
+81.11%
+85.23%
+86.23%
+88.05%
+
+CNN2
+Ours*
+Ours*
+Ours†
+Ours†
+
+108,618
+1024
+2048
+1872
+2688
+
+79.03%
+78.83%
+85.90%
+84.54%
+86.09%
+
+79.85%
+82.78%
+84.09%
+83.10%
+86.28%
+
+# Params
+
+MSE Loss
+
+LSTM
+Ours*
+Ours*
+
+12961
+64
+2048
+
+0.0035
+0.0019
+0.00061
+
+Table 5. Fine Tuning ResNet50 via Mapping Networks
+
+Table 2. Mapping CNN on Deepfake Detection
+
+Method
+
+Method
+
+Method
+
+# Params
+
+Layers
+
+CDF
+
+FF++
+
+ResNet50
+Ours*
+ResNet50
+Ours*
+
+25M
+2048
+17M
+1024
+
+All
+All
+L-4, FC
+L-4, FC
+
+95.23%
+95.10%
+91.11%
+92.10%
+
+91.78%
+91.02%
+88.03%
+89.23%
+
+3.3. Fine-Tuning a Model
+Table 5 presents the results of fine-tuning ResNet50 on
+deepfake detection. The results indicate that our mapping
+networks can effectively adapt pre-trained models to new
+tasks with a significantly reduced of trainable parameters
+while achieving competitive accuracy 95.10% and 91.02%
+7
+
+Table 6. Ablation of Mapping Loss on FashionMNIST dataset
+
+Method
+
+# Params
+
+Task Loss
+
++ Stab
+
++ Smooth
+
++ Alli
+
++ Sm + Ali
+
++ Stab + Sm
+
+Full
+
+CNN2
+Ours*
+Ours*
+Ours†
+Ours†
+
+108,618
+1024
+2048
+1872
+2688
+
+90.40%
+87.79%
+87.88%
+89.11%
+91.11%
+
+88.30%
+89.91%
+89.56%
+91.89%
+
+88.85%
+90.23%
+89.43%
+91.50%
+
+88.21%
+90.11%
+89.32%
+91.67%
+
+88.66%
+89.86%
+90.47%
+92.90%
+
+88.43%
+90.67%
+91.11%
+93.63%
+
+89.49%
+91.88%
+92.84%
+94.08%
+
+Table 7. Robustness Study of Mapping CNN
+
+Method
+
+# Params
+
+MNIST
+
+FMNIST
+
+CNN2
+Full DNN
+
+108,618
+6,753,104
+
+98.69%
+97.12 %
+
+90.40%
+90.11%
+
+Ours*– WM
+Ours*– WM
+
+1024
+2048
+
+95.62%
+96.55%
+
+86.51%
+87.66%
+
+Ours*
+Ours*
+
+1024
+2048
+
+97.88%
+98.66%
+
+89.49%
+91.88%
+
+LV + WMAP
+LV + WMAP
+
+2048
+4096
+
+97.90%
+98.48%
+
+89.30%
+91.93%
+
+LV + FullDNN
+LV + FullDNN
+
+543,095
+1,629,285
+
+96.16%
+97.60%
+
+90.11%
+90.67%
+
+nally, in LV + FullDNN both the latent vector and mapping
+weights are trainable, where latent vector lengths of 5 and
+15 correspond to 5×108618+5 and 15×108618+15 trainable parameters respectively. Here, increasing latent vector further explodes parameter count without helping much.
+Among all others, Mapping Networks (Ours*) achieves best
+results, even using separate trainable parameters in LV +
+WMAP does not improve the performance. The 2-4% accuracy increment in Ours* over Ours* - WM, highlights
+the importance of weight modulation. Furthermore, outperforming both FullDNN and LV + FullDNN shows that
+making the mapping weights fully trainable does not help,
+but increases overfitting. Thus, modulating the mapping
+weights provides an effective trade-off between underfitting
+and overfitting.
+
+3.5. Ablation of Mapping Loss
+
+Table 8. Imapct of Add Ons on Mapping Network
+
+Method
+
+# Params
+
+MNIST
+
+FMNIST
+
+CNN2
+CNN2 + LRD
+CNN2 + Prune
+
+108,618
+35,914
+10862
+
+98.69%
+98.12%
+95.87%
+
+90.40%
+89.67%
+87.91%
+
+Ours*
+Ours* + LRD
+Ours*+ Prune
+
+2048
+1456
+2048
+
+98.66%
+97.80%
+95.93%
+
+91.88%
+90.67%
+88.70%
+
+Ours†
+Ours†+LRD
+Ours† + Prune
+
+2688
+2688
+2688
+
+99.28%
+98.81%
+97.15%
+
+94.08%
+93.55%
+91.79%
+
+Table 6 presents an ablation study of our Mapping CNN
+using various combinations of loss components in the Mapping loss function on the FashionMNIST. The results indicate that different configurations of the mapping loss yield
+increasing accuracy as various components are added. From
+the table its quite clear that the stability and smoothness
+component contribute slightly more than alignment one.
+The overall accuracy increment of 2-3% from task loss to
+mapping loss, proves its importance.
+
+3.6. Impact of Add-Ons
+Table 8 shows the effect of 90% unstructured pruning and
+low rank decomposition (rank 16) of fully connected layers in baseline and Mapping Networks. Ours* and Ours†
+has the same number of non trainable inference parameters
+as target CNN2 for inference. The effect of pruning and
+LRD on CNN2, Ours* and Ours† are quite similar, showing
+those techniques can be effectively combined with Mapping
+Networks as well. So, Ours*/Ours†+LRD and Pruning effectively decreases both training and inference parameters
+and time, enabling it to get the perfect spot in Figure 1.
+
+using L = 250. Variation of results with varying L is shown
+in appendix.
+
+3.4. Ablation of Mapping Networks
+Table 7 presents an ablation study of our Mapping CNN on
+FashionMNIST dataset. Full DNN represents that the latent
+vector is not trainable but the mapping weights are trainable via gradient descent. Next, Ours*–WM denotes that
+the mapping weights are fixed and not modulated. LV +
+WMAP means the mapping weights are modulated by another set of trainable parameters not the latent vector. Fi-
+
+4. Conclusion
+Mapping Networks achieve comparable to better performance on presented tasks with 200× to 500× less trainable
+8
+
+parameters while increasing expressivity, reducing overfitting and training time of the model. However, for large target networks SLVT becomes slightly memory expensive.
+This is solved by layer wise training which reduces the
+memory requirement almost 10 times. For fine tuning, this
+is jointly solved by layer wise training and increasing count
+of fine tuned weights per modulation element, enabling us
+to extend Mapping Networks to LLMs and LVMs in future.
+
+9
+
+References
+
+[15] Max Jaderberg, Andrea Vedaldi, and Andrew Zisserman.
+Speeding up convolutional neural networks with low rank
+expansions. arXiv preprint arXiv:1405.3866, 2014. 2
+[16] Chunyuan Li, Heerad Farkhoor, Rosanne Liu, and Jason
+Yosinski. Measuring the intrinsic dimension of objective
+landscapes. arXiv preprint arXiv:1804.08838, 2018. 2
+[17] Yuezun Li, Xin Yang, Pu Sun, Honggang Qi, and Siwei
+Lyu. Celeb-df: A large-scale challenging dataset for deepfake forensics. In Proceedings of the IEEE/CVF conference
+on computer vision and pattern recognition, pages 3207–
+3216, 2020. 7
+[18] Jialin Mao, Itay Griniasty, Han Kheng Teoh, Rahul Ramesh,
+Rubing Yang, Mark K Transtrum, James P Sethna, and Pratik
+Chaudhari. The training process of many deep networks
+explores the same low-dimensional manifold. Proceedings
+of the National Academy of Sciences, 121(12):e2310002121,
+2024. 2
+[19] Hariharan Narayanan and Sanjoy Mitter. Sample complexity of testing the manifold hypothesis. Advances in neural
+information processing systems, 23, 2010. 1
+[20] Russell Reed. Pruning algorithms-a survey. IEEE transactions on Neural Networks, 4(5):740–747, 1993. 2
+[21] Andreas Rossler, Davide Cozzolino, Luisa Verdoliva, Christian Riess, Justus Thies, and Matthias Nießner. Faceforensics++: Learning to detect manipulated facial images. In
+Proceedings of the IEEE/CVF international conference on
+computer vision, pages 1–11, 2019. 7
+[22] Zichao Yang, Marcin Moczulski, Misha Denil, Nando
+De Freitas, Alex Smola, Le Song, and Ziyu Wang. Deep fried
+convnets. In Proceedings of the IEEE international conference on computer vision, pages 1476–1483, 2015. 2
+
+[1] El Mehdi Achour, François Malgouyres, and Sébastien
+Gerchinovitz. The loss landscape of deep linear neural networks: a second-order analysis. Journal of Machine Learning Research, 25(242):1–76, 2024. 2
+[2] Pratik Chaudhari, Anna Choromanska, Stefano Soatto, Yann
+LeCun, Carlo Baldassi, Christian Borgs, Jennifer Chayes,
+Levent Sagun, and Riccardo Zecchina. Entropy-sgd: Biasing
+gradient descent into wide valleys. Journal of Statistical Mechanics: Theory and Experiment, 2019(12):124018, 2019. 2
+[3] Marius Cordts, Mohamed Omran, Sebastian Ramos, Timo
+Scharwächter, Markus Enzweiler, Rodrigo Benenson, Uwe
+Franke, Stefan Roth, and Bernt Schiele. The cityscapes
+dataset. In CVPR Workshop on the Future of Datasets in
+Vision, page 1, 2015. 7
+[4] Misha Denil, Babak Shakibi, Laurent Dinh, Marc’Aurelio
+Ranzato, and Nando De Freitas. Predicting parameters in
+deep learning. Advances in neural information processing
+systems, 26, 2013. 2
+[5] Felix Draxler, Kambis Veschgini, Manfred Salmhofer, and
+Fred Hamprecht. Essentially no barriers in neural network
+energy landscape. In International conference on machine
+learning, pages 1309–1318. PMLR, 2018. 2
+[6] Carl Eckart and Gale Young. The approximation of one matrix by another of lower rank. Psychometrika, 1(3):211–218,
+1936. 2
+[7] Charles Fefferman, Sanjoy Mitter, and Hariharan Narayanan.
+Testing the manifold hypothesis. Journal of the American
+Mathematical Society, 29(4):983–1049, 2016. 1
+[8] Chrisantha Fernando, Dylan Banarse, Malcolm Reynolds,
+Frederic Besse, David Pfau, Max Jaderberg, Marc Lanctot,
+and Daan Wierstra. Convolution by evolution: Differentiable pattern producing networks. In Proceedings of the
+Genetic and Evolutionary Computation Conference 2016,
+pages 109–116, 2016. 2
+[9] Jonathan Frankle and Michael Carbin. The lottery ticket hypothesis: Finding sparse, trainable neural networks. arXiv
+preprint arXiv:1803.03635, 2018. 2
+[10] Jonathan Frankle, Gintare Karolina Dziugaite, Daniel Roy,
+and Michael Carbin. Linear mode connectivity and the lottery ticket hypothesis. In International Conference on Machine Learning, pages 3259–3269. PMLR, 2020. 2
+[11] Timur Garipov, Pavel Izmailov, Dmitrii Podoprikhin,
+Dmitry P Vetrov, and Andrew G Wilson. Loss surfaces,
+mode connectivity, and fast ensembling of dnns. Advances
+in neural information processing systems, 31, 2018. 2
+[12] Jose Javier Gonzalez Ortiz, John Guttag, and Adrian Dalca.
+Scale-space hypernetworks for efficient biomedical image
+analysis. Advances in Neural Information Processing Systems, 36:12760–12773, 2023. 2
+[13] David Ha, Andrew M Dai, and Quoc V Le. Hypernetworks.
+In International Conference on Learning Representations,
+2017. 2
+[14] Yerlan Idelbayev and Miguel A Carreira-Perpinán. Low-rank
+compression of neural nets: Learning the rank of each layer.
+In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pages 8049–8059, 2020. 2
+
+10
+
+
