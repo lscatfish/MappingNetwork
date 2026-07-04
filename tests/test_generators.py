@@ -1,5 +1,5 @@
 import pytest
-import torch
+
 from mapping_network.generators.base import ParameterGenerator
 
 
