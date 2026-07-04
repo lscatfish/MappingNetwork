@@ -1,8 +1,9 @@
-import pytest
 import torch
-from mapping_network.target_nets.cnn2 import CNN2
+
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
+from mapping_network.target_nets.cnn2 import CNN2
+from mapping_network.target_nets.lrd_config import LRDConfig
 
 
 def test_cnn2_parameter_count():
@@ -73,3 +74,22 @@ def test_cnn1_3conv_functional_forward():
     y = model.functional_forward(x, theta_hat)
     y.sum().backward()
     assert theta_hat.grad is not None
+
+
+def test_cnn2_lrd_reduces_params(device='cuda'):
+    if not torch.cuda.is_available():
+        device = 'cpu'
+    net_full = CNN2(lrd_config=LRDConfig(enabled=False)).to(device)
+    net_lrd = CNN2(lrd_config=LRDConfig(enabled=True, default_rank=10)).to(device)
+    assert net_lrd.get_total_params() < net_full.get_total_params()
+
+
+def test_cnn2_lrd_functional_matches_module(device='cuda'):
+    if not torch.cuda.is_available():
+        device = 'cpu'
+    net = CNN2(lrd_config=LRDConfig(enabled=True, default_rank=10)).to(device)
+    x = torch.randn(2, 1, 28, 28, device=device)
+    theta = torch.randn(net.get_total_params(), device=device, requires_grad=True)
+    y_func = net.functional_forward(x, theta)
+    y_mod = net(x)
+    assert y_func.shape == y_mod.shape

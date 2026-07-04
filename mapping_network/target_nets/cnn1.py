@@ -1,13 +1,14 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from .base import TargetNet
+
 
 class CNN1(TargetNet):
     """AlexNet 风格，~537,960 参数。"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, lrd_config=None):
+        super().__init__(lrd_config)
         self.conv1 = nn.Conv2d(1, 48, kernel_size=5)     # 1,200 params
         self.pool1 = nn.AvgPool2d(2)
         self.conv2 = nn.Conv2d(48, 128, kernel_size=5)   # 153,728 params

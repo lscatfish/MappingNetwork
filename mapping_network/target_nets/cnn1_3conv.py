@@ -1,13 +1,14 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from .base import TargetNet
+
 
 class CNN1_3Conv(TargetNet):
     """AlexNet 风格三卷积版（实验性）。"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, lrd_config=None):
+        super().__init__(lrd_config)
         self.conv1 = nn.Conv2d(1, 16, kernel_size=5)     # 416
         self.pool1 = nn.AvgPool2d(2)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=5)    # 12,832

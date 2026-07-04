@@ -1,55 +1,148 @@
-import torch
+from dataclasses import dataclass
+
 import torch.nn as nn
+
+from .lrd_config import LRDConfig
+
+
+@dataclass
+class _ParamSlice:
+    kind: str  # 'full' or 'lrd'
+    # full
+    start: int = 0
+    end: int = 0
+    shape: tuple = ()
+    name: str = ''
+    is_bias: bool = False
+    # lrd
+    weight_name: str = ''
+    bias_name: str = ''
+    u_start: int = 0
+    u_end: int = 0
+    u_shape: tuple = ()
+    v_start: int = 0
+    v_end: int = 0
+    v_shape: tuple = ()
+    b_start: int = 0
+    b_end: int = 0
+    b_shape: tuple = ()
 
 
 class TargetNet(nn.Module):
-    """
-    目标网络基类。
+    """目标网络基类，支持 LRD。"""
 
-    提供两套前向接口：
-    - forward(x): 标准模块前向（用于基线训练）
-    - functional_forward(x, theta_hat): 函数式前向（用于 Mapping Network），
-      直接从 theta_hat 切片 reshape 为权重，保持 autograd 梯度链完整。
-    """
-
-    def __init__(self):
+    def __init__(self, lrd_config: LRDConfig | None = None):
         super().__init__()
-        self._param_slices = []  # [(start, end, shape, name, is_bias)]
+        self._lrd_config = lrd_config if lrd_config is not None else LRDConfig()
+        self._param_slices = []
+
+    def _should_use_lrd(self, layer_name: str, total_params: int) -> bool:
+        enabled = self._lrd_config.enabled
+        if enabled is True:
+            return True
+        if enabled is False:
+            return False
+        return total_params > self._lrd_config.auto_enable_threshold
 
     def _build_param_slices(self):
-        """构建参数切分映射表。子类在 __init__ 末尾调用。"""
         self._param_slices = []
         idx = 0
+        total_params = sum(p.numel() for p in self.parameters())
+        params_dict = dict(self.named_parameters())
+        processed_bias = set()
+
         for name, param in self.named_parameters():
+            if name in processed_bias:
+                continue
+
+            base = name.split('.')[0]
             shape = param.shape
             numel = param.numel()
             is_bias = 'bias' in name
-            self._param_slices.append((idx, idx + numel, shape, name, is_bias))
-            idx += numel
+
+            bias_name = name.replace('weight', 'bias')
+            bias_param = params_dict.get(bias_name)
+            bias_shape = bias_param.shape if bias_param is not None else (shape[0],)
+            bias_numel = bias_param.numel() if bias_param is not None else shape[0]
+
+            if (not is_bias and len(shape) == 2 and
+                    self._should_use_lrd(base, total_params)):
+                m, n = shape
+                rank = self._lrd_config.layer_ranks.get(base, self._lrd_config.default_rank)
+                rank = min(rank, m, n)
+
+                u_start, u_end = idx, idx + m * rank
+                v_start, v_end = u_end, u_end + n * rank
+                b_start, b_end = v_end, v_end + bias_numel
+
+                self._param_slices.append(_ParamSlice(
+                    kind='lrd',
+                    weight_name=name,
+                    bias_name=bias_name,
+                    u_start=u_start, u_end=u_end, u_shape=(m, rank),
+                    v_start=v_start, v_end=v_end, v_shape=(n, rank),
+                    b_start=b_start, b_end=b_end,
+                    b_shape=bias_shape,
+                ))
+                processed_bias.add(bias_name)
+                idx = b_end
+            else:
+                self._param_slices.append(_ParamSlice(
+                    kind='full',
+                    start=idx, end=idx + numel,
+                    shape=shape, name=name, is_bias=is_bias,
+                ))
+                idx += numel
 
     def get_param_slices(self):
         return self._param_slices
 
     def get_total_params(self):
-        return sum(p.numel() for p in self.parameters())
+        if not self._param_slices:
+            return sum(p.numel() for p in self.parameters())
+        last = self._param_slices[-1]
+        if last.kind == 'full':
+            return last.end
+        return last.b_end
 
     def get_param_names(self):
         return [name for name, _ in self.named_parameters()]
 
+    def get_group_param_size(self, group_name: str) -> int:
+        """返回某一层组在 theta_hat 中占用的压缩后参数数。"""
+        size = 0
+        for s in self._param_slices:
+            if s.kind == 'full' and s.name.split('.')[0] == group_name:
+                size += s.end - s.start
+            elif s.kind == 'lrd' and s.weight_name.split('.')[0] == group_name:
+                size += s.b_end - s.u_start
+        return size
+
+    def get_group_names(self) -> list[str]:
+        """按出现顺序返回所有层组名（如 ['conv1', 'conv2', 'fc1', 'fc2']）。"""
+        names = []
+        seen = set()
+        for s in self._param_slices:
+            name = s.name.split('.')[0] if s.kind == 'full' else s.weight_name.split('.')[0]
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+        return names
+
     def functional_forward(self, x, theta_hat):
-        """
-        函数式前向：从 theta_hat [P] 切分权重，用 F.conv2d / F.linear 执行前向。
-        梯度可完整回传至 theta_hat → z。
-        """
         params = {}
-        for start, end, shape, name, is_bias in self._param_slices:
-            params[name] = theta_hat[start:end].reshape(shape)
+        for s in self._param_slices:
+            if s.kind == 'full':
+                params[s.name] = theta_hat[s.start:s.end].reshape(s.shape)
+            elif s.kind == 'lrd':
+                U = theta_hat[s.u_start:s.u_end].reshape(s.u_shape)
+                V = theta_hat[s.v_start:s.v_end].reshape(s.v_shape)
+                params[s.weight_name] = U @ V.T
+                params[s.bias_name] = theta_hat[s.b_start:s.b_end].reshape(s.b_shape)
         return self._functional_forward(x, params)
 
     def _functional_forward(self, x, params):
-        """子类实现：使用 params 字典（键如 'conv1.weight'）做函数式前向。"""
         raise NotImplementedError
 
     def forward(self, x):
-        """标准模块前向（用于基线训练）。"""
         raise NotImplementedError
