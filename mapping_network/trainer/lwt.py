@@ -6,13 +6,12 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import tqdm
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from ..factory import build_generator
 from ..generators.base import ParameterGenerator
+from .optim_utils import build_optimizer, build_scheduler
 
 
 class LWTTrainer:
@@ -40,6 +39,8 @@ class LWTTrainer:
         experiment_name: str = 'lwt',
         checkpoint_metadata: dict = None,
         save_interval: int = 1,
+        optimizer_name: str = 'adamw',
+        scheduler_name: str = 'cosine_annealing',
     ):
         self.target_net = target_net.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -79,17 +80,21 @@ class LWTTrainer:
                 device=device,
             )
 
-        # Collect trainable params: all z's + loss lambda params
+        # Collect trainable params: all generator params + loss lambda params
         trainable_params = [
             self.loss_fn.lambda_st,
             self.loss_fn.lambda_sm,
             self.loss_fn.lambda_al,
         ]
         for mapping in self.layer_mappings.values():
-            trainable_params.append(mapping.z)
+            trainable_params.extend(mapping.parameters())
 
-        self.optimizer = optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=min_lr)
+        self.optimizer = build_optimizer(
+            trainable_params, optimizer_name, lr=lr, weight_decay=weight_decay
+        )
+        self.scheduler = build_scheduler(
+            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr
+        )
 
     def _setup_logger(self):
         """设置日志同时输出到控制台和文件。"""
@@ -142,49 +147,16 @@ class LWTTrainer:
         offsets = self._compute_offsets()
 
         for group_name, mapping in self.layer_mappings.items():
-            z_l = mapping.z
             start, end = offsets[group_name]
 
-            # L_smooth^(l): ||nabla_z M^(l)(z^(l))||^2_F / (P_l * d_l)
-            # 分项计算，避免产生 [P_l, d_l] 中间张量。
-            P_l, d_l = mapping.P, mapping.d
-            alpha_l = mapping.alpha
-            W_fixed_l = mapping.W_fixed
-            b_fixed_l = mapping.b_fixed
+            # L_smooth^(l) 与 L_align^(l) 由 generator 自行实现
+            l_smooth_total = l_smooth_total + mapping.smooth_loss()
+            l_align_total = l_align_total + mapping.align_loss()
 
-            a_l = W_fixed_l @ z_l + alpha_l * (z_l * z_l).sum() + b_fixed_l
-            tanh_derivative_sq_l = (1 - torch.tanh(a_l) ** 2) ** 2
-
-            row_norms_sq_l = torch.zeros(P_l, device=z_l.device, dtype=z_l.dtype)
-            chunk_size = 10000
-            for chunk_start in range(0, P_l, chunk_size):
-                chunk_end = min(chunk_start + chunk_size, P_l)
-                row_norms_sq_l[chunk_start:chunk_end] = (W_fixed_l[chunk_start:chunk_end] ** 2).sum(
-                    dim=1
-                )
-            term1_l = (tanh_derivative_sq_l * row_norms_sq_l).sum()
-            term2_l = 4 * alpha_l * (z_l * (W_fixed_l.T @ tanh_derivative_sq_l)).sum()
-            term3_l = 4 * alpha_l * alpha_l * (z_l * z_l).sum() * tanh_derivative_sq_l.sum()
-            l_smooth_l = (term1_l + term2_l + term3_l) / (P_l * d_l)
-            l_smooth_total = l_smooth_total + l_smooth_l
-
-            # L_align^(l): 1 - cos(z^(l), mean(W_mod^(l)))
-            # W_mod.mean(dim=0) = W_fixed.mean(dim=0) + α z_l
-            W_m = mapping.W_fixed_mean + mapping.alpha * z_l
-            cos_sim = F.cosine_similarity(z_l.unsqueeze(0), W_m.unsqueeze(0))
-            l_align_total = l_align_total + (1 - cos_sim.squeeze())
-
-            # L_stab^(l): noise perturbation on z^(l)
-            eps = torch.randn_like(z_l) * self.loss_fn.sigma_noise
-            z_noisy_l = z_l + eps
-            theta_noisy_l = torch.tanh(
-                z_noisy_l @ mapping.W_fixed.T
-                + mapping.alpha * (z_noisy_l * z_noisy_l).sum(dim=-1, keepdim=True)
-                + mapping.b_fixed
-            )
-            # Replace this layer's slice in the full theta
-            theta_noisy = theta_hat.clone()
-            theta_noisy[start:end] = theta_noisy_l
+            # L_stab^(l): 只扰动本层 z，替换到完整 theta 的对应切片。
+            # theta_hat 必须 detach，避免未扰动层的梯度泄漏到其他层。
+            theta_noisy = theta_hat.detach().clone()
+            theta_noisy[start:end] = mapping.noisy_forward(self.loss_fn.sigma_noise)
             y_hat_noisy = self.target_net.functional_forward(x, theta_noisy)
             l_stab_total = l_stab_total + F.mse_loss(y_hat_noisy, y_hat.detach())
 

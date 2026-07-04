@@ -14,16 +14,11 @@ class TestMappingLoss:
         loss_fn = MappingLoss().to(device)
 
         theta = mapping()
-        eps = torch.randn_like(mapping.z) * 0.01
-        z_noisy = mapping.z + eps
-        theta_noisy = torch.tanh(
-            mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
-        )
 
         x = torch.randn(2, 1, 28, 28, device=device)
         y = torch.randint(0, 10, (2,), device=device)
 
-        loss, losses_dict = loss_fn(mapping.z, theta, theta_noisy, mapping, target, x, y)
+        loss, losses_dict = loss_fn(theta, mapping, target, x, y)
         assert loss.requires_grad
         assert loss.item() > 0
         assert theta.device.type == device
@@ -36,16 +31,11 @@ class TestMappingLoss:
         loss_fn = MappingLoss().to(device)
 
         theta = mapping()
-        eps = torch.randn_like(mapping.z) * 0.01
-        z_noisy = mapping.z + eps
-        theta_noisy = torch.tanh(
-            mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
-        )
 
         x = torch.randn(2, 1, 28, 28, device=device)
         y = torch.randint(0, 10, (2,), device=device)
 
-        loss, _ = loss_fn(mapping.z, theta, theta_noisy, mapping, target, x, y)
+        loss, _ = loss_fn(theta, mapping, target, x, y)
         loss.backward()
         assert mapping.z.grad is not None
         assert mapping.z.grad.shape == (64,)
@@ -61,12 +51,7 @@ def test_mapping_loss_forward_lrd(device='cuda'):
     x = torch.randn(2, 1, 28, 28, device=device)
     y = torch.tensor([0, 1], device=device)
     theta = mapping()
-    eps = torch.randn_like(mapping.z) * loss_fn.sigma_noise
-    z_noisy = mapping.z + eps
-    theta_noisy = torch.tanh(
-        mapping.W_fixed @ z_noisy + mapping.alpha * (z_noisy * z_noisy).sum() + mapping.b_fixed
-    )
-    loss, losses = loss_fn(mapping.z, theta, theta_noisy, mapping, target_net, x, y)
+    loss, losses = loss_fn(theta, mapping, target_net, x, y)
     assert loss.item() == losses['total']
     loss.backward()
     assert mapping.z.grad is not None

@@ -62,7 +62,7 @@ class TargetNet(nn.Module):
             numel = param.numel()
             is_bias = 'bias' in name
 
-            bias_name = name.replace('weight', 'bias')
+            bias_name = name.replace('.weight', '.bias') if name.endswith('.weight') else name
             bias_param = params_dict.get(bias_name)
             bias_shape = bias_param.shape if bias_param is not None else (shape[0],)
             bias_numel = bias_param.numel() if bias_param is not None else shape[0]

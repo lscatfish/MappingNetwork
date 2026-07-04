@@ -25,13 +25,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
-from mapping_network.target_nets import CNN1, CNN2, CNN1_3Conv
-
-TARGET_NET_MAP = {
-    'cnn2': CNN2,
-    'cnn1': CNN1,
-    'cnn1_3conv': CNN1_3Conv,
-}
+from mapping_network.factory import TARGET_NET_MAP
 
 
 def load_config(path):

@@ -3,12 +3,12 @@ import logging
 import os
 
 import torch
-import torch.optim as optim
 import tqdm
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from mapping_network.generators.base import ParameterGenerator
+
+from .optim_utils import build_optimizer, build_scheduler
 
 
 class SLVTTrainer:
@@ -36,6 +36,8 @@ class SLVTTrainer:
         experiment_name: str = 'slvt',
         checkpoint_metadata: dict = None,
         save_interval: int = 1,
+        optimizer_name: str = 'adamw',
+        scheduler_name: str = 'cosine_annealing',
     ):
         self.mapping_net = mapping_net.to(device)
         self.target_net = target_net.to(device)
@@ -60,8 +62,12 @@ class SLVTTrainer:
             self.loss_fn.lambda_sm,
             self.loss_fn.lambda_al,
         ]
-        self.optimizer = optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=min_lr)
+        self.optimizer = build_optimizer(
+            trainable_params, optimizer_name, lr=lr, weight_decay=weight_decay
+        )
+        self.scheduler = build_scheduler(
+            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr
+        )
 
     def _setup_logger(self):
         """设置日志同时输出到控制台和文件。"""
@@ -99,34 +105,23 @@ class SLVTTrainer:
             # 1. 从 z 生成参数
             theta_hat = self.mapping_net()
 
-            # 2. 计算噪声版本用于 L_stab
-            eps = torch.randn_like(self.mapping_net.z) * self.loss_fn.sigma_noise
-            z_noisy = self.mapping_net.z + eps
-            theta_noisy = torch.tanh(
-                self.mapping_net.W_fixed @ z_noisy
-                + self.mapping_net.alpha * (z_noisy * z_noisy).sum()
-                + self.mapping_net.b_fixed
-            )
-
-            # 3. 计算损失 (函数式前向)
+            # 2. 计算损失 (函数式前向)
             loss, losses_dict = self.loss_fn(
-                self.mapping_net.z,
                 theta_hat,
-                theta_noisy,
                 self.mapping_net,
                 self.target_net,
                 x,
                 y,
             )
 
-            # 4. 计算准确率（在 optimizer.step() 之前，使用当前 theta_hat）
+            # 3. 计算准确率（在 optimizer.step() 之前，使用当前 theta_hat）
             with torch.no_grad():
                 y_hat = self.target_net.functional_forward(x, theta_hat)
                 _, predicted = y_hat.max(1)
                 total += y.size(0)
                 correct += predicted.eq(y).sum().item()
 
-            # 5. 反向传播
+            # 4. 反向传播
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()

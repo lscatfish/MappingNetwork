@@ -132,6 +132,8 @@ def main():
                 'lrd_config': cfg.get('lrd'),
             },
             save_interval=cfg.get('save_interval', 1),
+            optimizer_name=cfg.get('optimizer', 'adamw'),
+            scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
         )
     elif cfg['training_strategy'] == 'lwt':
         trainer = LWTTrainer(
@@ -155,6 +157,8 @@ def main():
                 'sigma_noise': cfg.get('sigma_noise', 0.01),
             },
             save_interval=cfg.get('save_interval', 1),
+            optimizer_name=cfg.get('optimizer', 'adamw'),
+            scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
         )
     else:
         raise ValueError(f'Unknown strategy: {cfg["training_strategy"]}')
