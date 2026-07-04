@@ -59,9 +59,12 @@
 │       ├── train_baseline.py  # 基线目标网络训练
 │       └── evaluate.py        # 评估 checkpoint
 ├── configs/                   # YAML 训练配置
+│   ├── cnn1_baseline.yaml
 │   ├── cnn1_slvt.yaml
 │   ├── cnn1_lwt.yaml
+│   ├── cnn1_3conv_baseline.yaml
 │   ├── cnn1_3conv_slvt.yaml
+│   ├── cnn2_baseline.yaml
 │   ├── cnn2_slvt.yaml
 │   └── cnn2_lwt.yaml
 ├── tests/                     # pytest 测试
@@ -143,11 +146,15 @@ uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml 
 ### 5.3 训练基线目标网络
 
 ```bash
+# 使用配置文件（推荐）
+uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn2_baseline.yaml
+
+# 使用命令行参数
 uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 30
 uv run python3 -m mapping_network.scripts.train_baseline --target cnn1 --device cpu --epochs 1
 ```
 
-基线权重会保存到 `{target}_baseline.pth`。
+基线权重会保存到 `checkpoints/{target}_baseline_final.pth`，并同时生成 `_best.pth`、`_epochN.pth`、`_results.json`、`.log`。
 
 ### 5.4 评估 Checkpoint
 
@@ -222,9 +229,10 @@ uv run ruff format .
 - LWT 中每层损失独立计算后再聚合，不得混用跨层隐向量。
 - 配置项统一从 YAML 读取；脚本支持通过命令行覆盖 `device`、`epochs`、`seed`。
 - 训练结束必须保存 checkpoint：
-  - SLVT 保存 `MappingNetwork.state_dict()`。
-  - LWT 保存 `{layer_name: MappingNetwork.state_dict()}` 字典。
-  - 同时保存训练结果到同名 `_results.json`。
+  - SLVT 保存 `MappingNetwork.state_dict()` 到 `checkpoints/{target}_slvt_final.pth`。
+  - LWT 保存 `{layer_name: MappingNetwork.state_dict()}` 字典到 `checkpoints/{target}_lwt_final.pth`。
+  - 基线保存目标网络 `state_dict` 到 `checkpoints/{target}_baseline_final.pth`。
+  - 三种训练都额外保存 `_best.pth`、`_epochN.pth`（由 `save_interval` 控制）、`_results.json`、`.log`。
 
 ### 7.3 配置文件约定
 
@@ -244,6 +252,7 @@ sigma_noise: float
 device: cuda | cpu
 log_interval: int
 checkpoint_dir: str
+save_interval: int           # 每隔多少 epoch 保存中间模型，1 表示每轮都存
 
 # SLVT 特有
 latent_dim: int
@@ -257,6 +266,9 @@ layer_latent_dims:
 layer_alphas:  # 可选
   conv1: float
   ...
+
+# 基线特有（无 SLVT/LWT 特有字段）
+target: cnn1 | cnn2 | cnn1_3conv
 ```
 
 ---
@@ -289,7 +301,7 @@ layer_alphas:  # 可选
 | 运行全部测试 | `uv run python3 -m pytest tests/ -v` |
 | 训练 SLVT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml` |
 | 训练 LWT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml` |
-| 训练基线 | `uv run python3 -m mapping_network.scripts.train_baseline --target cnn2` |
+| 训练基线 | `uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn2_baseline.yaml` |
 | 评估 | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
 | 代码检查 | `uv run ruff check .` |
 | 代码格式化 | `uv run ruff format .` |
