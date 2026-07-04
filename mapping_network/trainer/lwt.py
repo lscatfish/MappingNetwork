@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -35,6 +36,7 @@ class LWTTrainer:
         checkpoint_dir: str = 'checkpoints',
         experiment_name: str = 'lwt',
         checkpoint_metadata: dict = None,
+        save_interval: int = 1,
     ):
         self.target_net = target_net.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -46,6 +48,11 @@ class LWTTrainer:
         self.checkpoint_dir = checkpoint_dir
         self.experiment_name = experiment_name
         self.checkpoint_metadata = checkpoint_metadata or {}
+        self.save_interval = save_interval
+        self.best_test_acc = -1.0
+
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.logger = self._setup_logger()
 
         # Group target network parameters by layer name prefix
         self.param_groups = self._build_param_groups(target_net)
@@ -71,6 +78,27 @@ class LWTTrainer:
 
         self.optimizer = optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=min_lr)
+
+    def _setup_logger(self):
+        """设置日志同时输出到控制台和文件。"""
+        logger = logging.getLogger(self.experiment_name)
+        logger.setLevel(logging.INFO)
+        logger.handlers = []
+
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        log_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}.log')
+        file_handler = logging.FileHandler(log_path, mode='w')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        return logger
 
     @staticmethod
     def _build_param_groups(target_net):
@@ -123,8 +151,10 @@ class LWTTrainer:
 
             # L_smooth^(l): ||nabla_z M^(l)(z^(l))||^2_F / P_l
             def mapping_fn(z_in):
+                # 代数展开避免 vmap 时广播出 [B, P, d] 大中间张量
                 return torch.tanh(
-                    (mapping.W_fixed + mapping.alpha * z_in.unsqueeze(0)) @ z_in
+                    z_in @ mapping.W_fixed.T
+                    + mapping.alpha * (z_in * z_in).sum(dim=-1, keepdim=True)
                     + mapping.b_fixed
                 )
 
@@ -140,8 +170,11 @@ class LWTTrainer:
             # L_stab^(l): noise perturbation on z^(l)
             eps = torch.randn_like(z_l) * self.loss_fn.sigma_noise
             z_noisy_l = z_l + eps
-            W_mod_n = mapping.W_fixed + mapping.alpha * z_noisy_l.unsqueeze(0)
-            theta_noisy_l = torch.tanh(W_mod_n @ z_noisy_l + mapping.b_fixed)
+            theta_noisy_l = torch.tanh(
+                z_noisy_l @ mapping.W_fixed.T
+                + mapping.alpha * (z_noisy_l * z_noisy_l).sum(dim=-1, keepdim=True)
+                + mapping.b_fixed
+            )
             # Replace this layer's slice in the full theta
             theta_noisy = theta_hat.clone()
             theta_noisy[start:end] = theta_noisy_l
@@ -218,9 +251,8 @@ class LWTTrainer:
 
         return 100. * correct / total
 
-    def save_checkpoint(self, results, epoch=None):
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        suffix = f'_epoch{epoch}' if epoch else '_final'
+    def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
+        path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
         # Save dict of {layer_name: mapping.state_dict()} plus metadata
         checkpoint = {
@@ -236,16 +268,23 @@ class LWTTrainer:
             },
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
+            'is_best': is_best,
         }
-        path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
         torch.save(checkpoint, path)
+        return path
 
+    def save_results(self, results):
+        """保存训练结果到 JSON。"""
         results_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}_results.json')
         with open(results_path, 'w') as f:
             json.dump(results, f, indent=2)
-        return path
+        return results_path
 
     def train(self):
+        self.logger.info(
+            f'Start LWT training: {self.experiment_name}, '
+            f'device={self.device}, epochs={self.epochs}'
+        )
         results = []
         for epoch in range(1, self.epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
@@ -260,9 +299,27 @@ class LWTTrainer:
                 'lr': current_lr,
             })
             test_acc_str = f'{test_acc:.2f}%' if test_acc is not None else 'N/A'
-            print(f'Epoch {epoch}: train_loss={train_loss:.4f}, '
-                  f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}')
+            msg = (f'Epoch {epoch}: train_loss={train_loss:.4f}, '
+                   f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}')
+            self.logger.info(msg)
 
-        path = self.save_checkpoint(results)
-        print(f'Checkpoint saved to {path}')
+            # 保存中间模型
+            if self.save_interval > 0 and epoch % self.save_interval == 0:
+                inter_path = self.save_checkpoint(
+                    results, suffix=f'_epoch{epoch}', epoch=epoch
+                )
+                self.logger.info(f'Intermediate checkpoint saved to {inter_path}')
+
+            # 保存最优模型
+            if test_acc is not None and test_acc > self.best_test_acc:
+                self.best_test_acc = test_acc
+                best_path = self.save_checkpoint(
+                    results, suffix='_best', epoch=epoch, is_best=True
+                )
+                self.logger.info(f'New best test_acc={test_acc:.2f}%, saved to {best_path}')
+
+        final_path = self.save_checkpoint(results, suffix='_final', epoch=self.epochs)
+        results_path = self.save_results(results)
+        self.logger.info(f'Final checkpoint saved to {final_path}')
+        self.logger.info(f'Results JSON saved to {results_path}')
         return results

@@ -111,6 +111,7 @@ def main():
             checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
             experiment_name=exp_name,
             checkpoint_metadata=slvt_metadata,
+            save_interval=cfg.get('save_interval', 1),
         )
     elif cfg['training_strategy'] == 'lwt':
         lwt_metadata = {
@@ -133,6 +134,7 @@ def main():
             checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
             experiment_name=exp_name,
             checkpoint_metadata=lwt_metadata,
+            save_interval=cfg.get('save_interval', 1),
         )
     else:
         raise ValueError(f"Unknown strategy: {cfg['training_strategy']}")

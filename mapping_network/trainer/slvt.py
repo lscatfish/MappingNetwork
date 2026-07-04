@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -31,6 +32,7 @@ class SLVTTrainer:
         checkpoint_dir: str = 'checkpoints',
         experiment_name: str = 'slvt',
         checkpoint_metadata: dict = None,
+        save_interval: int = 1,
     ):
         self.mapping_net = mapping_net.to(device)
         self.target_net = target_net.to(device)
@@ -43,6 +45,11 @@ class SLVTTrainer:
         self.checkpoint_dir = checkpoint_dir
         self.experiment_name = experiment_name
         self.checkpoint_metadata = checkpoint_metadata or {}
+        self.save_interval = save_interval
+        self.best_test_acc = -1.0
+
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        self.logger = self._setup_logger()
 
         # 只更新 z 和 λ (MappingNet 权重固定)
         trainable_params = [
@@ -53,6 +60,30 @@ class SLVTTrainer:
         ]
         self.optimizer = optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=epochs, eta_min=min_lr)
+
+    def _setup_logger(self):
+        """设置日志同时输出到控制台和文件。"""
+        logger = logging.getLogger(self.experiment_name)
+        logger.setLevel(logging.INFO)
+        # 避免重复添加 handler（如多次实例化）
+        logger.handlers = []
+
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+        # 控制台输出
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        # 文件输出
+        log_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}.log')
+        file_handler = logging.FileHandler(log_path, mode='w')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+        return logger
 
     def train_epoch(self, epoch):
         self.mapping_net.train()
@@ -121,9 +152,7 @@ class SLVTTrainer:
 
         return 100. * correct / total
 
-    def save_checkpoint(self, results, epoch=None):
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        suffix = f"_epoch{epoch}" if epoch else "_final"
+    def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
         checkpoint = {
@@ -135,16 +164,23 @@ class SLVTTrainer:
             'state_dict': self.mapping_net.state_dict(),
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
+            'is_best': is_best,
         }
         torch.save(checkpoint, path)
+        return path
 
-        # 同时保存结果
+    def save_results(self, results):
+        """保存训练结果到 JSON。"""
         results_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}_results.json')
         with open(results_path, 'w') as f:
             json.dump(results, f, indent=2)
-        return path
+        return results_path
 
     def train(self):
+        self.logger.info(
+            f'Start SLVT training: {self.experiment_name}, '
+            f'device={self.device}, epochs={self.epochs}'
+        )
         results = []
         for epoch in range(1, self.epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
@@ -160,10 +196,28 @@ class SLVTTrainer:
             }
             results.append(epoch_result)
             test_acc_str = f'{test_acc:.2f}%' if test_acc is not None else 'N/A'
-            print(f'Epoch {epoch}: train_loss={train_loss:.4f}, '
-                  f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}')
+            msg = (f'Epoch {epoch}: train_loss={train_loss:.4f}, '
+                   f'train_acc={train_acc:.2f}%, test_acc={test_acc_str}, lr={current_lr:.6f}')
+            self.logger.info(msg)
+
+            # 保存中间模型
+            if self.save_interval > 0 and epoch % self.save_interval == 0:
+                inter_path = self.save_checkpoint(
+                    results, suffix=f'_epoch{epoch}', epoch=epoch
+                )
+                self.logger.info(f'Intermediate checkpoint saved to {inter_path}')
+
+            # 保存最优模型
+            if test_acc is not None and test_acc > self.best_test_acc:
+                self.best_test_acc = test_acc
+                best_path = self.save_checkpoint(
+                    results, suffix='_best', epoch=epoch, is_best=True
+                )
+                self.logger.info(f'New best test_acc={test_acc:.2f}%, saved to {best_path}')
 
         # 保存最终 checkpoint
-        path = self.save_checkpoint(results)
-        print(f'Checkpoint saved to {path}')
+        final_path = self.save_checkpoint(results, suffix='_final', epoch=self.epochs)
+        results_path = self.save_results(results)
+        self.logger.info(f'Final checkpoint saved to {final_path}')
+        self.logger.info(f'Results JSON saved to {results_path}')
         return results

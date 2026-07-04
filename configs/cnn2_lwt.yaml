@@ -26,3 +26,4 @@ sigma_noise: 0.01
 device: cuda
 log_interval: 100
 checkpoint_dir: checkpoints
+save_interval: 1

@@ -178,6 +178,7 @@ sigma_noise: 0.01             # L_stab 里给 z 加噪声的标准差
 device: cuda                  # 训练设备：cuda 或 cpu
 log_interval: 100             # 每隔多少 batch 在进度条更新一次信息
 checkpoint_dir: checkpoints   # 模型保存目录
+save_interval: 1              # 每隔多少 epoch 保存一次中间模型，1 表示每轮都存
 ```
 
 ### 4.2 SLVT 特有参数
@@ -235,28 +236,38 @@ uv run python3 -m mapping_network.scripts.train \
 ### 5.1 Mapping Network 产物
 
 ```
-checkpoints/cnn2_slvt_final.pth       # 模型权重（包含 metadata 和 state_dict）
+checkpoints/cnn2_slvt_final.pth       # 最后一轮模型权重（包含 metadata 和 state_dict）
+checkpoints/cnn2_slvt_best.pth        # 测试准确率最高那轮的模型权重
+checkpoints/cnn2_slvt_epoch1.pth      # 第 1 轮的中间权重（save_interval=1 时每轮都有）
 checkpoints/cnn2_slvt_results.json    # 每轮训练 loss / acc / 学习率记录
+checkpoints/cnn2_slvt.log             # 训练日志文本，和终端输出一致
 ```
 
 ### 5.2 LWT 产物
 
 ```
 checkpoints/cnn2_lwt_final.pth        # 每层 MappingNetwork 的权重字典 + metadata
+checkpoints/cnn2_lwt_best.pth         # 测试准确率最高的权重
+checkpoints/cnn2_lwt_epoch1.pth       # 第 1 轮中间权重
 checkpoints/cnn2_lwt_results.json     # 训练记录
+checkpoints/cnn2_lwt.log              # 训练日志文本
 ```
 
 ### 5.3 基线产物
 
 ```
-cnn2_baseline.pth                     # 基线目标网络权重 + metadata
+checkpoints/cnn2_baseline_final.pth   # 最后一轮基线目标网络权重 + metadata
+checkpoints/cnn2_baseline_best.pth    # 测试准确率最高的基线权重
+checkpoints/cnn2_baseline_epoch1.pth  # 第 1 轮中间权重
+checkpoints/cnn2_baseline_results.json # 训练记录
+checkpoints/cnn2_baseline.log          # 训练日志文本
 ```
 
 加载基线时需要先取 `state_dict`：
 
 ```python
 import torch
-ckpt = torch.load('cnn2_baseline.pth')
+ckpt = torch.load('checkpoints/cnn2_baseline_final.pth')
 model.load_state_dict(ckpt['state_dict'])
 ```
 

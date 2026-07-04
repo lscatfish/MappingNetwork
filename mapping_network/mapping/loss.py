@@ -46,8 +46,11 @@ class MappingLoss(nn.Module):
         from torch.func import jacfwd
 
         def mapping_fn(z_in):
+            # 代数展开避免 vmap 时广播出 [B, P, d] 大中间张量：
+            # (W + alpha * z.unsqueeze(0)) @ z = W @ z + alpha * ||z||^2
             return torch.tanh(
-                (mapping_net.W_fixed + mapping_net.alpha * z_in.unsqueeze(0)) @ z_in
+                z_in @ mapping_net.W_fixed.T
+                + mapping_net.alpha * (z_in * z_in).sum(dim=-1, keepdim=True)
                 + mapping_net.b_fixed
             )
 
