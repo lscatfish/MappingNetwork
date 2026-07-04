@@ -54,6 +54,8 @@ def main():
         set_seed(cfg['seed'])
 
     device = cfg.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+    print(f"Strategy: {cfg['training_strategy']}, Target: {cfg['target_net']}, Epochs: {cfg['epochs']}")
 
     # Data
     transform = transforms.Compose([
@@ -76,6 +78,13 @@ def main():
 
     exp_name = f"{cfg['target_net']}_{cfg['training_strategy']}"
 
+    common_metadata = {
+        'target_net': cfg['target_net'],
+        'training_strategy': cfg['training_strategy'],
+        'alpha': cfg.get('alpha', 0.01),
+        'sigma_noise': cfg.get('sigma_noise', 0.01),
+    }
+
     if cfg['training_strategy'] == 'slvt':
         mapping = MappingNetwork(
             target_net.get_total_params(),
@@ -86,6 +95,10 @@ def main():
         print(f'Trainable: {sum(p.numel() for p in mapping.parameters() if p.requires_grad):,}')
         print(f'Fixed mapping weights: {mapping.W_fixed.numel():,}')
 
+        slvt_metadata = {
+            **common_metadata,
+            'latent_dim': cfg['latent_dim'],
+        }
         trainer = SLVTTrainer(
             mapping, target_net, loss_fn,
             train_loader, test_loader,
@@ -97,8 +110,14 @@ def main():
             log_interval=cfg.get('log_interval', 100),
             checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
             experiment_name=exp_name,
+            checkpoint_metadata=slvt_metadata,
         )
     elif cfg['training_strategy'] == 'lwt':
+        lwt_metadata = {
+            **common_metadata,
+            'layer_latent_dims': cfg['layer_latent_dims'],
+            'layer_alphas': cfg.get('layer_alphas'),
+        }
         trainer = LWTTrainer(
             target_net, loss_fn,
             cfg['layer_latent_dims'],
@@ -113,6 +132,7 @@ def main():
             log_interval=cfg.get('log_interval', 100),
             checkpoint_dir=cfg.get('checkpoint_dir', 'checkpoints'),
             experiment_name=exp_name,
+            checkpoint_metadata=lwt_metadata,
         )
     else:
         raise ValueError(f"Unknown strategy: {cfg['training_strategy']}")

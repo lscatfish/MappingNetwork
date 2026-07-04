@@ -85,8 +85,17 @@ def main():
         test_acc = 100. * test_correct / test_total
         print(f'Epoch {epoch}: test_acc={test_acc:.2f}%')
 
-    torch.save(model.state_dict(), f'{args.target}_baseline.pth')
-    print(f'Baseline saved to {args.target}_baseline.pth')
+    checkpoint = {
+        'type': 'baseline',
+        'target_net': args.target,
+        'epochs': args.epochs,
+        'final_test_acc': test_acc,
+        'state_dict': model.state_dict(),
+    }
+    save_path = f'{args.target}_baseline.pth'
+    torch.save(checkpoint, save_path)
+    print(f'Baseline saved to {save_path}')
+    print(f'Final test accuracy: {test_acc:.2f}%')
 
 
 if __name__ == '__main__':

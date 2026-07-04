@@ -34,6 +34,7 @@ class LWTTrainer:
         log_interval: int = 100,
         checkpoint_dir: str = 'checkpoints',
         experiment_name: str = 'lwt',
+        checkpoint_metadata: dict = None,
     ):
         self.target_net = target_net.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -44,6 +45,7 @@ class LWTTrainer:
         self.log_interval = log_interval
         self.checkpoint_dir = checkpoint_dir
         self.experiment_name = experiment_name
+        self.checkpoint_metadata = checkpoint_metadata or {}
 
         # Group target network parameters by layer name prefix
         self.param_groups = self._build_param_groups(target_net)
@@ -220,10 +222,20 @@ class LWTTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         suffix = f'_epoch{epoch}' if epoch else '_final'
 
-        # Save dict of {layer_name: mapping.state_dict()}
+        # Save dict of {layer_name: mapping.state_dict()} plus metadata
         checkpoint = {
-            name: mapping.state_dict()
-            for name, mapping in self.layer_mappings.items()
+            'target_net': self.checkpoint_metadata.get('target_net'),
+            'training_strategy': self.checkpoint_metadata.get('training_strategy', 'lwt'),
+            'layer_latent_dims': self.checkpoint_metadata.get('layer_latent_dims'),
+            'layer_alphas': self.checkpoint_metadata.get('layer_alphas'),
+            'alpha': self.checkpoint_metadata.get('alpha'),
+            'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
+            'state_dict': {
+                name: mapping.state_dict()
+                for name, mapping in self.layer_mappings.items()
+            },
+            'results': results,
+            'epoch': epoch if epoch is not None else self.epochs,
         }
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
         torch.save(checkpoint, path)

@@ -89,9 +89,6 @@ def main():
         'device', 'cuda' if torch.cuda.is_available() else 'cpu'
     )
 
-    target_cls = TARGET_NET_MAP[cfg['target_net']]
-    target_net = target_cls().to(device)
-
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,)),
@@ -99,31 +96,52 @@ def main():
     test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     test_loader = DataLoader(test_dataset, batch_size=cfg.get('batch_size', 64))
 
-    if cfg.get('training_strategy') == 'lwt':
+    checkpoint = torch.load(args.checkpoint, map_location=device)
+
+    # 新格式：checkpoint 是包含 metadata 和 state_dict 的字典
+    # 旧格式：直接是 state_dict（依赖 config 提供结构信息）
+    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+        ckpt_meta = checkpoint
+        state_dict = checkpoint['state_dict']
+    else:
+        ckpt_meta = {}
+        state_dict = checkpoint
+
+    # target_net / strategy 优先从 checkpoint metadata 读取，其次从 config 读取
+    target_net_name = ckpt_meta.get('target_net') or cfg.get('target_net')
+    strategy = ckpt_meta.get('training_strategy') or cfg.get('training_strategy', 'slvt')
+
+    target_cls = TARGET_NET_MAP[target_net_name]
+    target_net = target_cls().to(device)
+
+    if strategy == 'lwt':
         # LWT: recreate per-layer MappingNetworks matching the trainer's group sizes
         param_groups = build_param_groups(target_net)
         mappings = {}
-        layer_dims = cfg.get('layer_latent_dims', {})
+        layer_dims = ckpt_meta.get('layer_latent_dims') or cfg.get('layer_latent_dims', {})
+        layer_alphas = ckpt_meta.get('layer_alphas') or cfg.get('layer_alphas')
         for name, group_size in param_groups:
-            dim = layer_dims.get(name, 64)
+            dim = layer_dims.get(name, 64) if isinstance(layer_dims, dict) else 64
+            alpha = layer_alphas.get(name, cfg.get('alpha', 0.01)) if isinstance(layer_alphas, dict) else cfg.get('alpha', 0.01)
             mappings[name] = MappingNetwork(
-                group_size, dim, alpha=cfg.get('alpha', 0.01)
+                group_size, dim, alpha=alpha
             ).to(device)
 
-        checkpoint = torch.load(args.checkpoint, map_location=device)
         for name, mapping in mappings.items():
-            if name in checkpoint:
-                mapping.load_state_dict(checkpoint[name])
+            if name in state_dict:
+                mapping.load_state_dict(state_dict[name])
 
         acc = evaluate_lwt(mappings, param_groups, target_net, test_loader, device)
     else:
         # SLVT: single MappingNetwork
+        latent_dim = ckpt_meta.get('latent_dim') or cfg.get('latent_dim', 2048)
+        alpha = ckpt_meta.get('alpha') or cfg.get('alpha', 0.01)
         mapping = MappingNetwork(
             target_net.get_total_params(),
-            cfg.get('latent_dim', 2048),
-            alpha=cfg.get('alpha', 0.01),
+            latent_dim,
+            alpha=alpha,
         ).to(device)
-        mapping.load_state_dict(torch.load(args.checkpoint, map_location=device))
+        mapping.load_state_dict(state_dict)
         acc = evaluate_slvt(mapping, target_net, test_loader, device)
 
     print(f'Test accuracy: {acc:.2f}%')
