@@ -65,7 +65,8 @@ class TargetNet(nn.Module):
             bias_shape = bias_param.shape if bias_param is not None else (shape[0],)
             bias_numel = bias_param.numel() if bias_param is not None else shape[0]
 
-            if (not is_bias and len(shape) == 2 and
+            module = self.get_submodule(base)
+            if (not is_bias and isinstance(module, nn.Linear) and
                     self._should_use_lrd(base, total_params)):
                 m, n = shape
                 rank = self._lrd_config.layer_ranks.get(base, self._lrd_config.default_rank)
