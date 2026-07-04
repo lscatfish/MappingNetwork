@@ -1,0 +1,303 @@
+# Mapping Network — AI Agent 协作指南
+
+本文件面向不熟悉本项目的 AI 编程助手，汇总项目架构、技术栈、构建/测试命令、开发约定与安全注意事项。信息基于当前代码仓库实际内容整理。
+
+---
+
+## 1. 项目概述
+
+本项目复现论文 **Mapping Networks**（arXiv:2602.19134v1）在 MNIST 上的核心实验。核心思想是：
+
+- 用一个低维、可训练的隐向量 `z` 生成目标 CNN 的全部参数。
+- 通过**函数式前向**（functional forward）保持梯度链完整，使损失反向传播到 `z`。
+- 相比直接训练目标网络，实现 50–500× 的可训练参数量压缩。
+
+当前仓库实现了两套训练策略：
+
+- **SLVT**（Single Latent Vector Training，`Ours*`）：单个 `z` 生成整个目标网络参数。
+- **LWT**（Layer-wise Training，`Ours†`）：为目标网络每一层（按参数名前缀分组）使用独立的 `z^(l)` 和 MappingNetwork。
+
+支持的目标网络：
+
+- `CNN2`：LeNet 风格，约 108,610 参数。
+- `CNN1`：AlexNet 风格（2 卷积），约 537,960 参数。
+- `CNN1_3Conv`：CNN1 的三卷积实验变体，约 32,394 参数。
+
+---
+
+## 2. 技术栈
+
+- **Python**：3.13（`.python-version`、`requires-python = ">=3.13"`）
+- **包管理器**：`uv`（`pyproject.toml` + `uv.lock`）
+- **深度学习框架**：PyTorch 2.11+（CUDA 12.8 wheel）
+- **其他依赖**：torchvision、torchaudio、numpy、scipy、pandas、tqdm、PyYAML、scikit-learn、matplotlib
+- **测试框架**：pytest
+- **代码检查**：Ruff（E/F/I 规则，行宽 100，单引号，忽略 E501）
+
+所有可执行脚本统一使用 `uv run python3 ...` 运行，确保使用项目锁定的虚拟环境（`.venv`）。
+
+---
+
+## 3. 项目结构
+
+```
+/root/MyProj/MappingNetwork
+├── mapping_network/           # 主包
+│   ├── target_nets/           # 目标网络实现
+│   │   ├── base.py            # TargetNet 基类（functional_forward 接口）
+│   │   ├── cnn1.py            # CNN1
+│   │   ├── cnn1_3conv.py      # CNN1 三卷积实验版
+│   │   └── cnn2.py            # CNN2
+│   ├── mapping/               # Mapping Network 核心
+│   │   ├── mapping_net.py     # MappingNetwork：固定正交权重 + z 调制生成参数
+│   │   └── loss.py            # MappingLoss：任务/稳定/光滑/对齐损失
+│   ├── trainer/               # 训练器
+│   │   ├── slvt.py            # SLVT 训练器
+│   │   └── lwt.py             # LWT 训练器
+│   └── scripts/               # 命令行入口
+│       ├── train.py           # 统一训练入口（读取 YAML 配置）
+│       ├── train_baseline.py  # 基线目标网络训练
+│       └── evaluate.py        # 评估 checkpoint
+├── configs/                   # YAML 训练配置
+│   ├── cnn1_slvt.yaml
+│   ├── cnn1_lwt.yaml
+│   ├── cnn1_3conv_slvt.yaml
+│   ├── cnn2_slvt.yaml
+│   └── cnn2_lwt.yaml
+├── tests/                     # pytest 测试
+│   ├── conftest.py            # 全局 device fixture
+│   ├── test_loss.py
+│   ├── test_lwt.py
+│   ├── test_mapping_net.py
+│   ├── test_slvt.py
+│   └── test_target_nets.py
+├── checkpoints/               # 训练产物（.pth + .json），默认不提交
+├── data/                      # MNIST 数据集下载目录，默认不提交
+├── docs/superpowers/          # 开发计划与设计文档
+├── pyproject.toml             # 项目配置与依赖
+├── uv.lock                    # uv 锁定依赖
+└── README.md
+```
+
+---
+
+## 4. 核心架构说明
+
+### 4.1 目标网络（TargetNet）
+
+- 所有目标网络继承自 `mapping_network.target_nets.base.TargetNet`。
+- 提供两套前向接口：
+  - `forward(x)`：标准模块前向，用于基线训练。
+  - `functional_forward(x, theta_hat)`：从 `theta_hat` 切片 reshape 出权重，使用 `F.conv2d` / `F.linear` 做函数式前向。
+- **关键约束**：禁止使用 `.data.copy_()` 注入参数，必须通过函数式前向保持 `theta_hat → z` 的梯度链完整。
+- 子类需在 `__init__` 末尾调用 `self._build_param_slices()`，以建立参数切分映射表。
+
+### 4.2 MappingNetwork
+
+- 固定权重 `W_fixed`（正交初始化）与偏置 `b_fixed` 注册为 buffer，`requires_grad=False`。
+- 唯一可训练参数是 `z`（`nn.Parameter`）。
+- 前向公式：
+  - `W_mod = W_fixed + alpha * z`
+  - `theta_hat = tanh(W_mod @ z + b_fixed)`
+- 输出 `theta_hat` 形状为 `[P]`，其中 `P` 是目标网络总参数个数。
+
+### 4.3 MappingLoss
+
+```
+L_map = L_task + sigmoid(lambda_st) * L_stab
+          + sigmoid(lambda_sm) * L_smooth
+          + sigmoid(lambda_al) * L_align
+```
+
+- `L_task`：交叉熵分类损失。
+- `L_stab`：对 `z` 加高斯噪声后前向输出的 MSE，衡量稳定性。
+- `L_smooth`：`||∇_z M(z)||²_F / (P * d)`，使用 `torch.func.jacfwd` 计算。
+- `L_align`：`1 - cos(z, mean(W_mod, dim=0))`。
+- `lambda_*` 为可训练的 `nn.Parameter`，通过 `sigmoid` 门控后参与加权。
+
+---
+
+## 5. 构建与运行命令
+
+### 5.1 安装依赖
+
+项目使用 `uv` 管理环境，通常无需手动安装：
+
+```bash
+uv sync
+```
+
+### 5.2 训练 Mapping Network
+
+```bash
+# SLVT 示例
+uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml
+
+# LWT 示例
+uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml
+
+# 覆盖部分配置（常用于快速冒烟测试）
+uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml --device cpu --epochs 1
+```
+
+### 5.3 训练基线目标网络
+
+```bash
+uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 30
+uv run python3 -m mapping_network.scripts.train_baseline --target cnn1 --device cpu --epochs 1
+```
+
+基线权重会保存到 `{target}_baseline.pth`。
+
+### 5.4 评估 Checkpoint
+
+```bash
+# SLVT
+uv run python3 -m mapping_network.scripts.evaluate \
+  --checkpoint checkpoints/cnn2_slvt_final.pth \
+  --config configs/cnn2_slvt.yaml
+
+# LWT
+uv run python3 -m mapping_network.scripts.evaluate \
+  --checkpoint checkpoints/cnn2_lwt_final.pth \
+  --config configs/cnn2_lwt.yaml
+```
+
+---
+
+## 6. 测试命令
+
+所有测试默认在 CUDA 可用时运行在 GPU 上，可通过 `--device` 显式指定：
+
+```bash
+# 运行全部测试
+uv run python3 -m pytest tests/ -v
+
+# 指定设备
+uv run python3 -m pytest tests/ -v --device cpu
+
+# 单独运行某个测试文件
+uv run python3 -m pytest tests/test_target_nets.py -v
+uv run python3 -m pytest tests/test_mapping_net.py -v
+uv run python3 -m pytest tests/test_loss.py -v
+uv run python3 -m pytest tests/test_slvt.py -v
+uv run python3 -m pytest tests/test_lwt.py -v
+```
+
+当前测试集共 17 个用例，覆盖：
+
+- 各目标网络参数量与前向输出。
+- `functional_forward` 输出与模块前向一致且梯度可回传。
+- MappingNetwork 输出形状、可训练参数、固定权重、梯度回传到 `z`。
+- MappingLoss 前向与梯度回传。
+- SLVT / LWT 训练一个 epoch 后 `z` 被更新。
+
+---
+
+## 7. 代码风格与开发约定
+
+### 7.1 格式化与检查
+
+- 使用 **Ruff** 进行 lint 与 format，配置在 `pyproject.toml`：
+  - `line-length = 100`
+  - 引号风格：单引号
+  - lint 规则：`E`, `F`, `I`
+  - 忽略 `E501`（行超长由 formatter 处理）
+  - `__init__.py` 忽略 `F401`（允许未使用 import 暴露公共 API）
+
+检查与格式化命令：
+
+```bash
+uv run ruff check .
+uv run ruff check . --fix
+uv run ruff format .
+```
+
+### 7.2 代码约定
+
+- 所有网络类继承自 `torch.nn.Module`。
+- 代码注释与 docstring 主要使用中文；类名、函数名、变量名为英文。
+- `MappingNetwork` 的 `W_fixed`、`b_fixed` 必须注册为 buffer，不可训练。
+- 参数生成后**不注入**目标网络模块，而是调用 `target_net.functional_forward(x, theta_hat)`。
+- LWT 中每层损失独立计算后再聚合，不得混用跨层隐向量。
+- 配置项统一从 YAML 读取；脚本支持通过命令行覆盖 `device`、`epochs`、`seed`。
+- 训练结束必须保存 checkpoint：
+  - SLVT 保存 `MappingNetwork.state_dict()`。
+  - LWT 保存 `{layer_name: MappingNetwork.state_dict()}` 字典。
+  - 同时保存训练结果到同名 `_results.json`。
+
+### 7.3 配置文件约定
+
+`configs/*.yaml` 必须包含：
+
+```yaml
+target_net: cnn1 | cnn2 | cnn1_3conv
+training_strategy: slvt | lwt
+batch_size: int
+epochs: int
+seed: int
+lr: float
+weight_decay: float
+min_lr: float
+alpha: float
+sigma_noise: float
+device: cuda | cpu
+log_interval: int
+checkpoint_dir: str
+
+# SLVT 特有
+latent_dim: int
+
+# LWT 特有
+layer_latent_dims:
+  conv1: int
+  conv2: int
+  fc1: int
+  fc2: int
+layer_alphas:  # 可选
+  conv1: float
+  ...
+```
+
+---
+
+## 8. Git 与分支策略
+
+- 主分支：`main`
+- 复现分支：`feat/mapping-network-reproduction`（当前活跃分支）
+- 开发时应从 `main` 切出功能分支，通过 PR 或 review 后合并。
+- 历史提交遵循 `feat:`、`fix:` 等前缀约定。
+
+---
+
+## 9. 安全与部署注意事项
+
+- **不要提交模型权重**：`.gitignore` 已排除 `*.pth`、`*.pt`、`*.onnx`、`data/`、`.venv/` 等。
+- **不要提交凭据**：项目无 API key 或数据库连接，但请勿在代码中硬编码任何密钥。
+- **CUDA 依赖**：PyTorch 从 `https://download.pytorch.org/whl/cu128` 显式索引安装。若在其他 CUDA 版本环境运行，需调整 `pyproject.toml` 中的 index 与源。
+- **训练产物较大**：checkpoint 文件可能达数 MB 到数十 MB，请确保 `checkpoints/` 始终被 `.gitignore` 忽略。
+- **测试写文件**：部分测试会写入 `/tmp/test_*` 目录，运行后通常无需清理。
+- **MNIST 数据**：首次训练时会自动下载到 `./data`，请勿将该目录提交到版本控制。
+
+---
+
+## 10. 常见任务速查
+
+| 任务 | 命令 |
+|------|------|
+| 同步依赖 | `uv sync` |
+| 运行全部测试 | `uv run python3 -m pytest tests/ -v` |
+| 训练 SLVT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml` |
+| 训练 LWT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml` |
+| 训练基线 | `uv run python3 -m mapping_network.scripts.train_baseline --target cnn2` |
+| 评估 | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
+| 代码检查 | `uv run ruff check .` |
+| 代码格式化 | `uv run ruff format .` |
+
+---
+
+## 11. 参考文献
+
+- 论文：*Mapping Networks*（arXiv:2602.19134v1）
+- 设计文档：`docs/superpowers/specs/2026-07-04-mapping-networks-design.md`
+- 实现计划：`docs/superpowers/plans/2026-07-04-mapping-networks-implementation.md`
