@@ -58,27 +58,51 @@ uv sync
 
 ### 3.1 训练基线目标网络
 
+基线训练也支持 YAML 配置文件，和 SLVT/LWT 用法统一。
+
+**推荐的配置文件方式**：
+
 ```bash
-# CNN2 基线，训练 30 轮
-uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 30
+# CNN2 基线
+uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn2_baseline.yaml
 
 # CNN1 基线
-uv run python3 -m mapping_network.scripts.train_baseline --target cnn1 --epochs 30
+uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn1_baseline.yaml
 
 # CNN1_3Conv 基线
-uv run python3 -m mapping_network.scripts.train_baseline --target cnn1_3conv --epochs 30
+uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn1_3conv_baseline.yaml
+```
+
+**基线配置文件示例**（`configs/cnn2_baseline.yaml`）：
+
+```yaml
+target: cnn2          # 目标网络：cnn1 / cnn2 / cnn1_3conv
+epochs: 30            # 训练轮数
+batch_size: 64        # 每批样本数
+lr: 0.001             # 学习率
+seed: 42              # 随机种子
+device: cuda          # cuda 或 cpu
+```
+
+**也可以直接用命令行**（适合临时测试）：
+
+```bash
+uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 1 --device cpu
 ```
 
 **基线脚本支持的参数**：
 
 | 参数 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--target` | 是 | 无 | 选哪个目标网络：`cnn1` / `cnn2` / `cnn1_3conv` |
+| `--config` | 否 | 无 | YAML 配置文件路径 |
+| `--target` | 否* | 无 | 选哪个目标网络：`cnn1` / `cnn2` / `cnn1_3conv` |
 | `--epochs` | 否 | 30 | 训练多少轮 |
 | `--batch-size` | 否 | 64 | 每批用多少张图 |
 | `--lr` | 否 | 0.001 | 学习率 |
 | `--seed` | 否 | 42 | 随机种子，保证可复现 |
 | `--device` | 否 | `cuda` | 用 GPU 还是 CPU，可写 `cuda` 或 `cpu` |
+
+> *如果不使用 `--config`，则 `--target` 必填。命令行参数优先级高于配置文件。*
 
 ### 3.2 训练 Mapping Network（SLVT / LWT）
 
@@ -93,11 +117,14 @@ uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml
 **所有可用的配置文件**：
 
 ```
-configs/cnn1_slvt.yaml          # CNN1 + SLVT
-configs/cnn1_lwt.yaml           # CNN1 + LWT
-configs/cnn1_3conv_slvt.yaml    # CNN1_3Conv + SLVT
-configs/cnn2_slvt.yaml          # CNN2 + SLVT
-configs/cnn2_lwt.yaml           # CNN2 + LWT
+configs/cnn1_baseline.yaml       # CNN1 + 基线训练
+configs/cnn1_lwt.yaml            # CNN1 + LWT
+configs/cnn1_slvt.yaml           # CNN1 + SLVT
+configs/cnn1_3conv_baseline.yaml # CNN1_3Conv + 基线训练
+configs/cnn1_3conv_slvt.yaml     # CNN1_3Conv + SLVT
+configs/cnn2_baseline.yaml       # CNN2 + 基线训练
+configs/cnn2_lwt.yaml            # CNN2 + LWT
+configs/cnn2_slvt.yaml           # CNN2 + SLVT
 ```
 
 ### 3.3 评估已保存的模型
@@ -280,7 +307,7 @@ model.load_state_dict(ckpt['state_dict'])
 |---------|------|
 | 安装依赖 | `uv sync` |
 | 跑全部测试 | `uv run python3 -m pytest tests/ -v` |
-| 训练 CNN2 基线 | `uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 30` |
+| 训练 CNN2 基线 | `uv run python3 -m mapping_network.scripts.train_baseline --config configs/cnn2_baseline.yaml` |
 | 训练 CNN2 SLVT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_slvt.yaml` |
 | 训练 CNN2 LWT | `uv run python3 -m mapping_network.scripts.train --config configs/cnn2_lwt.yaml` |
 | 评估 SLVT | `uv run python3 -m mapping_network.scripts.evaluate --checkpoint checkpoints/cnn2_slvt_final.pth --config configs/cnn2_slvt.yaml` |
