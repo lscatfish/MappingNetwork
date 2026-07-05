@@ -11,12 +11,18 @@ class MappingLoss(nn.Module):
     L_stab does NOT modify target_net parameters — passes theta_noisy directly for functional forward.
     """
 
-    def __init__(self, sigma_noise: float = 0.01):
+    def __init__(
+        self,
+        sigma_noise: float = 0.01,
+        lambda_st_init: float = 0.1,
+        lambda_sm_init: float = 0.1,
+        lambda_al_init: float = 0.1,
+    ):
         super().__init__()
         self.sigma_noise = sigma_noise
-        self.lambda_st = nn.Parameter(torch.tensor(0.1))
-        self.lambda_sm = nn.Parameter(torch.tensor(0.1))
-        self.lambda_al = nn.Parameter(torch.tensor(0.1))
+        self.lambda_st = nn.Parameter(torch.tensor(lambda_st_init))
+        self.lambda_sm = nn.Parameter(torch.tensor(lambda_sm_init))
+        self.lambda_al = nn.Parameter(torch.tensor(lambda_al_init))
 
     def forward(self, theta_hat, mapping_net, target_net, x, y):
         """
