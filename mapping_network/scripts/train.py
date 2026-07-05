@@ -110,6 +110,8 @@ def main():
     experiment_name = make_experiment_name(cfg)
     checkpoint_dir = os.path.join(cfg['checkpoint_dir'], experiment_name)
 
+    append_log = args.resume is not None
+
     if cfg['training_strategy'] == 'slvt':
         mapping = build_generator(
             cfg.get('generator_type', 'linear'),
@@ -148,6 +150,7 @@ def main():
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
             scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
+            append_log=append_log,
         )
     elif cfg['training_strategy'] == 'lwt':
         trainer = LWTTrainer(
@@ -173,6 +176,7 @@ def main():
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
             scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
+            append_log=append_log,
         )
     else:
         raise ValueError(f'Unknown strategy: {cfg["training_strategy"]}')

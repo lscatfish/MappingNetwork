@@ -41,6 +41,7 @@ class LWTTrainer:
         save_interval: int = 1,
         optimizer_name: str = 'adamw',
         scheduler_name: str = 'cosine_annealing',
+        append_log: bool = False,
     ):
         self.target_net = target_net.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -53,6 +54,7 @@ class LWTTrainer:
         self.experiment_name = experiment_name
         self.checkpoint_metadata = checkpoint_metadata or {}
         self.save_interval = save_interval
+        self.append_log = append_log
         self.best_test_acc = -1.0
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -109,7 +111,8 @@ class LWTTrainer:
         logger.addHandler(console_handler)
 
         log_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}.log')
-        file_handler = logging.FileHandler(log_path, mode='w')
+        log_mode = 'a' if self.append_log else 'w'
+        file_handler = logging.FileHandler(log_path, mode=log_mode)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
