@@ -60,6 +60,7 @@ def main():
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--resume', type=str, default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -176,7 +177,12 @@ def main():
     else:
         raise ValueError(f'Unknown strategy: {cfg["training_strategy"]}')
 
-    results = trainer.train()
+    if args.resume:
+        start_epoch = trainer.load_checkpoint(args.resume) + 1
+    else:
+        start_epoch = 1
+
+    results = trainer.train(start_epoch=start_epoch)
     final_acc = results[-1]['test_acc']
     print(f'\nFinal test accuracy: {final_acc:.2f}%')
 
