@@ -99,7 +99,12 @@ def main():
     print(f'Target network: {cfg["target_net"]}, params: {target_net.get_total_params():,}')
 
     # Loss
-    loss_fn = MappingLoss(sigma_noise=cfg.get('sigma_noise', 0.01)).to(device)
+    loss_fn = MappingLoss(
+        sigma_noise=cfg.get('sigma_noise', 0.01),
+        lambda_st_init=cfg.get('lambda_st_init', 0.1),
+        lambda_sm_init=cfg.get('lambda_sm_init', 0.1),
+        lambda_al_init=cfg.get('lambda_al_init', 0.1),
+    ).to(device)
 
     experiment_name = make_experiment_name(cfg)
     checkpoint_dir = os.path.join(cfg['checkpoint_dir'], experiment_name)
