@@ -61,7 +61,12 @@ def test_lwt_layer_lrd_config_merge():
 
     target_net = build_target_net(cfg['target_net'], lrd_config)
     slices = target_net.get_param_slices()
-    fc1_slices = [s for s in slices if (s.kind == 'lrd' and s.weight_name.split('.')[0] == 'fc1') or (s.kind == 'full' and s.name.split('.')[0] == 'fc1')]
+    fc1_slices = [
+        s
+        for s in slices
+        if (s.kind == 'lrd' and s.weight_name.split('.')[0] == 'fc1')
+        or (s.kind == 'full' and s.name.split('.')[0] == 'fc1')
+    ]
     assert len(fc1_slices) == 1
     assert fc1_slices[0].kind == 'lrd', 'fc1 should use LRD with layer-specified rank'
 
