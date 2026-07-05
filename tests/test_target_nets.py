@@ -84,6 +84,15 @@ def test_cnn2_lrd_reduces_params(device='cuda'):
     assert net_lrd.get_total_params() < net_full.get_total_params()
 
 
+def test_cnn2_per_layer_lrd_override():
+    """layer_enabled 优先级高于全局 enabled=True。"""
+    target = CNN2(lrd_config={'enabled': True, 'layer_enabled': {'fc2': False}})
+    for s in target.get_param_slices():
+        name = s.name if s.kind == 'full' else s.weight_name
+        if name.startswith('fc2'):
+            assert s.kind == 'full', f'{name} should be full, got {s.kind}'
+
+
 def test_cnn2_lrd_functional_matches_module(device='cuda'):
     if not torch.cuda.is_available():
         device = 'cpu'

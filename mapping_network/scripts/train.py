@@ -30,6 +30,24 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+def _merge_lwt_lrd_config(cfg: dict, lrd_config: dict) -> dict:
+    """Merge per-layer LRD overrides from LWT layer_generators into global LRDConfig."""
+    if cfg.get('training_strategy') != 'lwt':
+        return lrd_config
+    layer_ranks = {}
+    layer_enabled = {}
+    for name, gen_cfg in cfg['layer_generators'].items():
+        if 'lrd_rank' in gen_cfg:
+            layer_ranks[name] = gen_cfg['lrd_rank']
+        if 'lrd_enabled' in gen_cfg:
+            layer_enabled[name] = gen_cfg['lrd_enabled']
+    return {
+        **lrd_config,
+        'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
+        'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
+    }
+
+
 def make_experiment_name(cfg):
     target = cfg['target_net']
     strategy = cfg['training_strategy']
@@ -42,6 +60,7 @@ def main():
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--resume', type=str, default=None)
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -75,26 +94,23 @@ def main():
 
     lrd_config = cfg.get('lrd', {})
 
-    # Merge per-layer lrd_rank overrides into global LRDConfig
-    if cfg['training_strategy'] == 'lwt':
-        layer_ranks = {}
-        for name, gen_cfg in cfg['layer_generators'].items():
-            if 'lrd_rank' in gen_cfg:
-                layer_ranks[name] = gen_cfg['lrd_rank']
-        if layer_ranks:
-            lrd_config = {
-                **lrd_config,
-                'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
-            }
+    lrd_config = _merge_lwt_lrd_config(cfg, lrd_config)
 
     target_net = build_target_net(cfg['target_net'], lrd_config)
     print(f'Target network: {cfg["target_net"]}, params: {target_net.get_total_params():,}')
 
     # Loss
-    loss_fn = MappingLoss(sigma_noise=cfg.get('sigma_noise', 0.01)).to(device)
+    loss_fn = MappingLoss(
+        sigma_noise=cfg.get('sigma_noise', 0.0001),
+        lambda_st_init=cfg.get('lambda_st_init', 0.1),
+        lambda_sm_init=cfg.get('lambda_sm_init', 0.1),
+        lambda_al_init=cfg.get('lambda_al_init', 0.1),
+    ).to(device)
 
     experiment_name = make_experiment_name(cfg)
     checkpoint_dir = os.path.join(cfg['checkpoint_dir'], experiment_name)
+
+    append_log = args.resume is not None
 
     if cfg['training_strategy'] == 'slvt':
         mapping = build_generator(
@@ -128,12 +144,13 @@ def main():
                 'generator_type': cfg.get('generator_type', 'linear'),
                 'latent_dim': cfg['latent_dim'],
                 'alpha': cfg.get('alpha', 0.01),
-                'sigma_noise': cfg.get('sigma_noise', 0.01),
+                'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
             scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
+            append_log=append_log,
         )
     elif cfg['training_strategy'] == 'lwt':
         trainer = LWTTrainer(
@@ -154,16 +171,22 @@ def main():
                 'target_net': cfg['target_net'],
                 'training_strategy': 'lwt',
                 'lrd_config': lrd_config,
-                'sigma_noise': cfg.get('sigma_noise', 0.01),
+                'sigma_noise': cfg.get('sigma_noise', 0.0001),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
             scheduler_name=cfg.get('scheduler', 'cosine_annealing'),
+            append_log=append_log,
         )
     else:
         raise ValueError(f'Unknown strategy: {cfg["training_strategy"]}')
 
-    results = trainer.train()
+    if args.resume:
+        start_epoch = trainer.load_checkpoint(args.resume) + 1
+    else:
+        start_epoch = 1
+
+    results = trainer.train(start_epoch=start_epoch)
     final_acc = results[-1]['test_acc']
     print(f'\nFinal test accuracy: {final_acc:.2f}%')
 

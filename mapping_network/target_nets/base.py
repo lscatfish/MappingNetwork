@@ -39,6 +39,12 @@ class TargetNet(nn.Module):
         self._param_slices = []
 
     def _should_use_lrd(self, layer_name: str, total_params: int) -> bool:
+        layer_enabled = self._lrd_config.layer_enabled.get(layer_name)
+        if layer_enabled is not None:
+            if layer_enabled is True:
+                return True
+            if layer_enabled is False:
+                return False
         enabled = self._lrd_config.enabled
         if enabled is True:
             return True

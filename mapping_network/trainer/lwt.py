@@ -41,6 +41,7 @@ class LWTTrainer:
         save_interval: int = 1,
         optimizer_name: str = 'adamw',
         scheduler_name: str = 'cosine_annealing',
+        append_log: bool = False,
     ):
         self.target_net = target_net.to(device)
         self.loss_fn = loss_fn.to(device)
@@ -53,6 +54,7 @@ class LWTTrainer:
         self.experiment_name = experiment_name
         self.checkpoint_metadata = checkpoint_metadata or {}
         self.save_interval = save_interval
+        self.append_log = append_log
         self.best_test_acc = -1.0
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -109,7 +111,8 @@ class LWTTrainer:
         logger.addHandler(console_handler)
 
         log_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}.log')
-        file_handler = logging.FileHandler(log_path, mode='w')
+        log_mode = 'a' if self.append_log else 'w'
+        file_handler = logging.FileHandler(log_path, mode=log_mode)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
@@ -244,15 +247,31 @@ class LWTTrainer:
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
+            'loss_fn_state_dict': self.loss_fn.state_dict(),
             'state_dict': {
                 name: mapping.state_dict() for name, mapping in self.layer_mappings.items()
             },
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'best_test_acc': self.best_test_acc,
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
             'is_best': is_best,
         }
         torch.save(checkpoint, path)
         return path
+
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        for name, state in checkpoint['state_dict'].items():
+            self.layer_mappings[name].load_state_dict(state)
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
+        self.results = checkpoint.get('results', [])
+        if 'loss_fn_state_dict' in checkpoint:
+            self.loss_fn.load_state_dict(checkpoint['loss_fn_state_dict'])
+        return checkpoint.get('epoch', 0)
 
     def save_results(self, results):
         """保存训练结果到 JSON。"""
@@ -261,13 +280,13 @@ class LWTTrainer:
             json.dump(results, f, indent=2)
         return results_path
 
-    def train(self):
+    def train(self, start_epoch=1):
         self.logger.info(
             f'Start LWT training: {self.experiment_name}, '
             f'device={self.device}, epochs={self.epochs}'
         )
-        results = []
-        for epoch in range(1, self.epochs + 1):
+        results = list(getattr(self, 'results', []))
+        for epoch in range(start_epoch, self.epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
             test_acc = self.evaluate() if self.test_loader is not None else None
             self.scheduler.step()

@@ -38,6 +38,7 @@ class SLVTTrainer:
         save_interval: int = 1,
         optimizer_name: str = 'adamw',
         scheduler_name: str = 'cosine_annealing',
+        append_log: bool = False,
     ):
         self.mapping_net = mapping_net.to(device)
         self.target_net = target_net.to(device)
@@ -51,6 +52,7 @@ class SLVTTrainer:
         self.experiment_name = experiment_name
         self.checkpoint_metadata = checkpoint_metadata or {}
         self.save_interval = save_interval
+        self.append_log = append_log
         self.best_test_acc = -1.0
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -85,7 +87,8 @@ class SLVTTrainer:
 
         # 文件输出
         log_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}.log')
-        file_handler = logging.FileHandler(log_path, mode='w')
+        log_mode = 'a' if self.append_log else 'w'
+        file_handler = logging.FileHandler(log_path, mode=log_mode)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
@@ -168,13 +171,28 @@ class SLVTTrainer:
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
+            'loss_fn_state_dict': self.loss_fn.state_dict(),
             'state_dict': self.mapping_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'best_test_acc': self.best_test_acc,
             'results': results,
             'epoch': epoch if epoch is not None else self.epochs,
             'is_best': is_best,
         }
         torch.save(checkpoint, path)
         return path
+
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        self.mapping_net.load_state_dict(checkpoint['state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
+        self.results = checkpoint.get('results', [])
+        if 'loss_fn_state_dict' in checkpoint:
+            self.loss_fn.load_state_dict(checkpoint['loss_fn_state_dict'])
+        return checkpoint.get('epoch', 0)
 
     def save_results(self, results):
         """保存训练结果到 JSON。"""
@@ -183,13 +201,13 @@ class SLVTTrainer:
             json.dump(results, f, indent=2)
         return results_path
 
-    def train(self):
+    def train(self, start_epoch=1):
         self.logger.info(
             f'Start SLVT training: {self.experiment_name}, '
             f'device={self.device}, epochs={self.epochs}'
         )
-        results = []
-        for epoch in range(1, self.epochs + 1):
+        results = list(getattr(self, 'results', []))
+        for epoch in range(start_epoch, self.epochs + 1):
             train_loss, train_acc = self.train_epoch(epoch)
             test_acc = self.evaluate() if self.test_loader is not None else None
             self.scheduler.step()
