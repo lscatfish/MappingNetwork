@@ -2,6 +2,7 @@
 
 import os
 
+import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -104,6 +105,41 @@ def test_lwt_per_layer_config(device):
     trainer.train_epoch(1)
     total_z = sum(m.d for m in trainer.layer_mappings.values())
     assert total_z == 16 + 16 + 32 + 8
+
+
+def make_one_batch_loader(device):
+    x = torch.randn(8, 1, 28, 28, device=device)
+    y = torch.randint(0, 10, (8,), device=device)
+    return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=8)
+
+
+@pytest.mark.parametrize('device', ['cpu'])
+def test_lwt_trainer_resume(tmp_path, device):
+    target_net = CNN2().to(device)
+    loss_fn = MappingLoss().to(device)
+    loader = make_one_batch_loader(device)
+    layer_gens = {
+        name: {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01}
+        for name in target_net.get_group_names()
+    }
+    ckpt_dir = str(tmp_path)
+    trainer = LWTTrainer(
+        target_net, loss_fn, layer_gens, loader, loader,
+        epochs=2, device=device, checkpoint_dir=ckpt_dir,
+        experiment_name='test_lwt_resume',
+        save_interval=0,
+    )
+    trainer.train()
+    ckpt_path = tmp_path / 'test_lwt_resume_final.pth'
+    trainer2 = LWTTrainer(
+        target_net, loss_fn, layer_gens, loader, loader,
+        epochs=2, device=device, checkpoint_dir=ckpt_dir,
+        experiment_name='test_lwt_resume2',
+        save_interval=0,
+    )
+    epoch = trainer2.load_checkpoint(str(ckpt_path))
+    assert epoch == 2
+    assert len(trainer2.results) == 2
 
 
 def test_lwt_stab_no_cross_layer_gradient(device):
