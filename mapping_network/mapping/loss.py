@@ -13,7 +13,7 @@ class MappingLoss(nn.Module):
 
     def __init__(
         self,
-        sigma_noise: float = 0.01,
+        sigma_noise: float = 0.0001,
         lambda_st_init: float = 0.1,
         lambda_sm_init: float = 0.1,
         lambda_al_init: float = 0.1,

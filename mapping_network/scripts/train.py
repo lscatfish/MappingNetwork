@@ -101,7 +101,7 @@ def main():
 
     # Loss
     loss_fn = MappingLoss(
-        sigma_noise=cfg.get('sigma_noise', 0.01),
+        sigma_noise=cfg.get('sigma_noise', 0.0001),
         lambda_st_init=cfg.get('lambda_st_init', 0.1),
         lambda_sm_init=cfg.get('lambda_sm_init', 0.1),
         lambda_al_init=cfg.get('lambda_al_init', 0.1),
@@ -144,7 +144,7 @@ def main():
                 'generator_type': cfg.get('generator_type', 'linear'),
                 'latent_dim': cfg['latent_dim'],
                 'alpha': cfg.get('alpha', 0.01),
-                'sigma_noise': cfg.get('sigma_noise', 0.01),
+                'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
             },
             save_interval=cfg.get('save_interval', 1),
@@ -171,7 +171,7 @@ def main():
                 'target_net': cfg['target_net'],
                 'training_strategy': 'lwt',
                 'lrd_config': lrd_config,
-                'sigma_noise': cfg.get('sigma_noise', 0.01),
+                'sigma_noise': cfg.get('sigma_noise', 0.0001),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
