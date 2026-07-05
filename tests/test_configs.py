@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from mapping_network.factory import build_target_net
 from mapping_network.generators.linear import LinearMappingNetwork
 from mapping_network.mapping.loss import MappingLoss
+from mapping_network.scripts.train import _merge_lwt_lrd_config
 from mapping_network.trainer.lwt import LWTTrainer
 from mapping_network.trainer.slvt import SLVTTrainer
 
@@ -50,21 +51,7 @@ def test_lwt_layer_lrd_config_merge():
     cfg = load_cfg('configs/cnn1_lwt.yaml')
     assert cfg['training_strategy'] == 'lwt'
 
-    lrd_config = cfg.get('lrd', {})
-
-    # Apply merge (same as train.py)
-    layer_ranks = {}
-    layer_enabled = {}
-    for name, gen_cfg in cfg['layer_generators'].items():
-        if 'lrd_rank' in gen_cfg:
-            layer_ranks[name] = gen_cfg['lrd_rank']
-        if 'lrd_enabled' in gen_cfg:
-            layer_enabled[name] = gen_cfg['lrd_enabled']
-    lrd_config = {
-        **lrd_config,
-        'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
-        'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
-    }
+    lrd_config = _merge_lwt_lrd_config(cfg, cfg.get('lrd', {}))
 
     # Verify merge
     assert 'fc1' in lrd_config['layer_ranks']
@@ -74,7 +61,7 @@ def test_lwt_layer_lrd_config_merge():
 
     target_net = build_target_net(cfg['target_net'], lrd_config)
     slices = target_net.get_param_slices()
-    fc1_slices = [s for s in slices if (s.kind == 'lrd' and 'fc1' in s.weight_name) or (s.kind == 'full' and 'fc1' in s.name)]
+    fc1_slices = [s for s in slices if (s.kind == 'lrd' and s.weight_name.split('.')[0] == 'fc1') or (s.kind == 'full' and s.name.split('.')[0] == 'fc1')]
     assert len(fc1_slices) == 1
     assert fc1_slices[0].kind == 'lrd', 'fc1 should use LRD with layer-specified rank'
 
@@ -92,22 +79,7 @@ def expected_mapping_trainable_params(cfg):
 def test_mapping_config_one_batch(cfg_path, device):
     cfg = load_cfg(cfg_path)
 
-    lrd_config = cfg.get('lrd', {})
-
-    # Apply same merge logic as train.py for LWT
-    if cfg['training_strategy'] == 'lwt':
-        layer_ranks = {}
-        layer_enabled = {}
-        for name, gen_cfg in cfg['layer_generators'].items():
-            if 'lrd_rank' in gen_cfg:
-                layer_ranks[name] = gen_cfg['lrd_rank']
-            if 'lrd_enabled' in gen_cfg:
-                layer_enabled[name] = gen_cfg['lrd_enabled']
-        lrd_config = {
-            **lrd_config,
-            'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
-            'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
-        }
+    lrd_config = _merge_lwt_lrd_config(cfg, cfg.get('lrd', {}))
 
     target_net = build_target_net(cfg['target_net'], lrd_config).to(device)
     loss_fn = MappingLoss(sigma_noise=cfg.get('sigma_noise', 0.01)).to(device)
