@@ -11,6 +11,12 @@ from mapping_network.target_nets.cnn2 import CNN2
 from mapping_network.trainer.slvt import SLVTTrainer
 
 
+def make_one_batch_loader(device):
+    x = torch.randn(1, 1, 28, 28, device=device)
+    y = torch.tensor([0], device=device)
+    return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=1)
+
+
 class TestSLVT:
     def test_slvt_train_one_batch(self, device):
         """验证 SLVT 训练一个 batch 后 z 有梯度更新，且全在指定设备上。"""
@@ -91,3 +97,27 @@ def test_slvt_z_updated_with_lrd(device):
     z_before = mapping.z.clone().detach()
     trainer.train_epoch(1)
     assert not torch.allclose(z_before, mapping.z)
+
+
+def test_slvt_trainer_resume(tmp_path, device):
+    target_net = CNN2().to(device)
+    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device)
+    loss_fn = MappingLoss().to(device)
+    loader = make_one_batch_loader(device)
+    trainer = SLVTTrainer(
+        mapping, target_net, loss_fn, loader, loader,
+        epochs=2, device=device, checkpoint_dir=str(tmp_path),
+        experiment_name='test_resume',
+        save_interval=0,
+    )
+    trainer.train()
+    ckpt_path = str(tmp_path / 'test_resume_final.pth')
+    trainer2 = SLVTTrainer(
+        mapping, target_net, loss_fn, loader, loader,
+        epochs=2, device=device, checkpoint_dir=str(tmp_path),
+        experiment_name='test_resume2',
+        save_interval=0,
+    )
+    epoch = trainer2.load_checkpoint(ckpt_path)
+    assert epoch == 2
+    assert len(trainer2.results) == 2
