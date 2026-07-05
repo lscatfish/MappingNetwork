@@ -168,6 +168,7 @@ class SLVTTrainer:
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
+            'loss_fn_state_dict': self.loss_fn.state_dict(),
             'state_dict': self.mapping_net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
@@ -186,6 +187,8 @@ class SLVTTrainer:
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
         self.results = checkpoint.get('results', [])
+        if 'loss_fn_state_dict' in checkpoint:
+            self.loss_fn.load_state_dict(checkpoint['loss_fn_state_dict'])
         return checkpoint.get('epoch', 0)
 
     def save_results(self, results):

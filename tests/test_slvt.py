@@ -105,19 +105,33 @@ def test_slvt_trainer_resume(tmp_path, device):
     loss_fn = MappingLoss().to(device)
     loader = make_one_batch_loader(device)
     trainer = SLVTTrainer(
-        mapping, target_net, loss_fn, loader, loader,
-        epochs=2, device=device, checkpoint_dir=str(tmp_path),
+        mapping,
+        target_net,
+        loss_fn,
+        loader,
+        loader,
+        epochs=2,
+        device=device,
+        checkpoint_dir=str(tmp_path),
         experiment_name='test_resume',
         save_interval=0,
     )
     trainer.train()
+    lambda_st_value = trainer.loss_fn.lambda_st.item()
     ckpt_path = str(tmp_path / 'test_resume_final.pth')
     trainer2 = SLVTTrainer(
-        mapping, target_net, loss_fn, loader, loader,
-        epochs=2, device=device, checkpoint_dir=str(tmp_path),
+        mapping,
+        target_net,
+        loss_fn,
+        loader,
+        loader,
+        epochs=2,
+        device=device,
+        checkpoint_dir=str(tmp_path),
         experiment_name='test_resume2',
         save_interval=0,
     )
     epoch = trainer2.load_checkpoint(ckpt_path)
     assert epoch == 2
     assert len(trainer2.results) == 2
+    assert trainer2.loss_fn.lambda_st.item() == lambda_st_value

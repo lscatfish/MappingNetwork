@@ -124,22 +124,36 @@ def test_lwt_trainer_resume(tmp_path, device):
     }
     ckpt_dir = str(tmp_path)
     trainer = LWTTrainer(
-        target_net, loss_fn, layer_gens, loader, loader,
-        epochs=2, device=device, checkpoint_dir=ckpt_dir,
+        target_net,
+        loss_fn,
+        layer_gens,
+        loader,
+        loader,
+        epochs=2,
+        device=device,
+        checkpoint_dir=ckpt_dir,
         experiment_name='test_lwt_resume',
         save_interval=0,
     )
     trainer.train()
+    lambda_st_value = trainer.loss_fn.lambda_st.item()
     ckpt_path = tmp_path / 'test_lwt_resume_final.pth'
     trainer2 = LWTTrainer(
-        target_net, loss_fn, layer_gens, loader, loader,
-        epochs=2, device=device, checkpoint_dir=ckpt_dir,
+        target_net,
+        loss_fn,
+        layer_gens,
+        loader,
+        loader,
+        epochs=2,
+        device=device,
+        checkpoint_dir=ckpt_dir,
         experiment_name='test_lwt_resume2',
         save_interval=0,
     )
     epoch = trainer2.load_checkpoint(str(ckpt_path))
     assert epoch == 2
     assert len(trainer2.results) == 2
+    assert trainer2.loss_fn.lambda_st.item() == lambda_st_value
 
 
 def test_lwt_stab_no_cross_layer_gradient(device):
