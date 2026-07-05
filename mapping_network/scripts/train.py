@@ -75,17 +75,20 @@ def main():
 
     lrd_config = cfg.get('lrd', {})
 
-    # Merge per-layer lrd_rank overrides into global LRDConfig
+    # Merge per-layer LRD overrides from layer_generators into global LRDConfig
     if cfg['training_strategy'] == 'lwt':
         layer_ranks = {}
+        layer_enabled = {}
         for name, gen_cfg in cfg['layer_generators'].items():
             if 'lrd_rank' in gen_cfg:
                 layer_ranks[name] = gen_cfg['lrd_rank']
-        if layer_ranks:
-            lrd_config = {
-                **lrd_config,
-                'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
-            }
+            if 'lrd_enabled' in gen_cfg:
+                layer_enabled[name] = gen_cfg['lrd_enabled']
+        lrd_config = {
+            **lrd_config,
+            'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
+            'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
+        }
 
     target_net = build_target_net(cfg['target_net'], lrd_config)
     print(f'Target network: {cfg["target_net"]}, params: {target_net.get_total_params():,}')

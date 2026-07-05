@@ -45,6 +45,40 @@ def make_one_batch_loader(device):
     return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=1)
 
 
+def test_lwt_layer_lrd_config_merge():
+    """Verify LWT per-layer lrd_rank/lrd_enabled merge into global LRDConfig."""
+    cfg = load_cfg('configs/cnn1_lwt.yaml')
+    assert cfg['training_strategy'] == 'lwt'
+
+    lrd_config = cfg.get('lrd', {})
+
+    # Apply merge (same as train.py)
+    layer_ranks = {}
+    layer_enabled = {}
+    for name, gen_cfg in cfg['layer_generators'].items():
+        if 'lrd_rank' in gen_cfg:
+            layer_ranks[name] = gen_cfg['lrd_rank']
+        if 'lrd_enabled' in gen_cfg:
+            layer_enabled[name] = gen_cfg['lrd_enabled']
+    lrd_config = {
+        **lrd_config,
+        'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
+        'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
+    }
+
+    # Verify merge
+    assert 'fc1' in lrd_config['layer_ranks']
+    assert lrd_config['layer_ranks']['fc1'] == 10
+    # No layer_enabled in cnn1_lwt.yaml; should be empty dict
+    assert lrd_config.get('layer_enabled', {}) == {}
+
+    target_net = build_target_net(cfg['target_net'], lrd_config)
+    slices = target_net.get_param_slices()
+    fc1_slices = [s for s in slices if (s.kind == 'lrd' and 'fc1' in s.weight_name) or (s.kind == 'full' and 'fc1' in s.name)]
+    assert len(fc1_slices) == 1
+    assert fc1_slices[0].kind == 'lrd', 'fc1 should use LRD with layer-specified rank'
+
+
 def expected_mapping_trainable_params(cfg):
     """可训练参数 = 所有 z 维度之和 + 3 个 lambda。"""
     if cfg['training_strategy'] == 'slvt':
@@ -59,6 +93,22 @@ def test_mapping_config_one_batch(cfg_path, device):
     cfg = load_cfg(cfg_path)
 
     lrd_config = cfg.get('lrd', {})
+
+    # Apply same merge logic as train.py for LWT
+    if cfg['training_strategy'] == 'lwt':
+        layer_ranks = {}
+        layer_enabled = {}
+        for name, gen_cfg in cfg['layer_generators'].items():
+            if 'lrd_rank' in gen_cfg:
+                layer_ranks[name] = gen_cfg['lrd_rank']
+            if 'lrd_enabled' in gen_cfg:
+                layer_enabled[name] = gen_cfg['lrd_enabled']
+        lrd_config = {
+            **lrd_config,
+            'layer_ranks': {**lrd_config.get('layer_ranks', {}), **layer_ranks},
+            'layer_enabled': {**lrd_config.get('layer_enabled', {}), **layer_enabled},
+        }
+
     target_net = build_target_net(cfg['target_net'], lrd_config).to(device)
     loss_fn = MappingLoss(sigma_noise=cfg.get('sigma_noise', 0.01)).to(device)
     loader = make_one_batch_loader(device)
