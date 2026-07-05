@@ -49,6 +49,7 @@ def main():
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--checkpoint-dir', type=str, default=None)
     parser.add_argument('--save-interval', type=int, default=None)
+    parser.add_argument('--resume', type=str, default=None)
     args = parser.parse_args()
 
     # 如果给了配置文件，先读配置
@@ -96,7 +97,8 @@ def main():
     logger.addHandler(console_handler)
 
     log_path = os.path.join(checkpoint_dir, f'{experiment_name}.log')
-    file_handler = logging.FileHandler(log_path, mode='w')
+    log_mode = 'a' if args.resume else 'w'
+    file_handler = logging.FileHandler(log_path, mode=log_mode)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
@@ -120,9 +122,20 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.0001)
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-5)
 
+    start_epoch = 1
     results = []
     best_test_acc = -1.0
-    for epoch in range(1, epochs + 1):
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt['state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+        start_epoch = ckpt.get('epoch', 0) + 1
+        results = ckpt.get('results', [])
+        best_test_acc = ckpt.get('best_test_acc', -1.0)
+        logger.info(f'Resumed from {args.resume}, starting at epoch {start_epoch}')
+
+    for epoch in range(start_epoch, epochs + 1):
         model.train()
         correct = total = 0
         pbar = tqdm.tqdm(train_loader, desc=f'Epoch {epoch}/{epochs}')
@@ -175,6 +188,10 @@ def main():
                     'epoch': epoch,
                     'final_test_acc': test_acc,
                     'state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'best_test_acc': best_test_acc,
+                    'results': results,
                 },
                 inter_path,
             )
@@ -192,6 +209,10 @@ def main():
                     'epoch': epoch,
                     'final_test_acc': test_acc,
                     'state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'best_test_acc': best_test_acc,
+                    'results': results,
                 },
                 best_path,
             )
@@ -205,6 +226,10 @@ def main():
         'epochs': epochs,
         'final_test_acc': test_acc,
         'state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'best_test_acc': best_test_acc,
+        'results': results,
     }
     torch.save(checkpoint, final_path)
 

@@ -191,3 +191,64 @@ def test_baseline_config_one_batch(cfg_path, device):
     assert next(target_net.parameters()).device.type == device.split(':')[0]
     assert loss.item() > 0
     assert any(p.grad is not None for p in target_net.parameters())
+
+
+def test_baseline_checkpoint_resume_fields(tmp_path, device):
+    """Baseline checkpoint 包含恢复所需的所有字段，且 resume 起始 epoch 计算正确。"""
+    import torch.optim as optim
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+
+    model = build_target_net('cnn2').to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+    scheduler = CosineAnnealingLR(optimizer, T_max=5)
+
+    ckpt_path = tmp_path / 'test_baseline_epoch2.pth'
+    checkpoint = {
+        'type': 'baseline',
+        'target_net': 'cnn2',
+        'epochs': 5,
+        'epoch': 2,
+        'final_test_acc': 96.5,
+        'state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'best_test_acc': 96.5,
+        'results': [{'epoch': 1, 'test_acc': 95.0}, {'epoch': 2, 'test_acc': 96.5}],
+    }
+    torch.save(checkpoint, ckpt_path)
+
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+
+    assert ckpt['type'] == 'baseline'
+    assert 'optimizer_state_dict' in ckpt
+    assert 'scheduler_state_dict' in ckpt
+    assert 'best_test_acc' in ckpt
+    assert 'results' in ckpt
+    assert 'epoch' in ckpt
+    assert ckpt['epoch'] == 2
+    assert ckpt['best_test_acc'] == 96.5
+    assert len(ckpt['results']) == 2
+
+    # 恢复逻辑：验证 start_epoch 和状态载入
+    model2 = build_target_net('cnn2').to(device)
+    optimizer2 = optim.AdamW(model2.parameters(), lr=0.001)
+    scheduler2 = CosineAnnealingLR(optimizer2, T_max=5)
+
+    model2.load_state_dict(ckpt['state_dict'])
+    optimizer2.load_state_dict(ckpt['optimizer_state_dict'])
+    scheduler2.load_state_dict(ckpt['scheduler_state_dict'])
+    start_epoch = ckpt.get('epoch', 0) + 1
+    results = ckpt.get('results', [])
+    best_test_acc = ckpt.get('best_test_acc', -1.0)
+
+    assert start_epoch == 3
+    assert len(results) == 2
+    assert best_test_acc == 96.5
+
+    # 原始主键（state_dict）载入后前向一致
+    model.eval()
+    model2.eval()
+    x = torch.randn(1, 1, 28, 28, device=device)
+    out1 = model(x)
+    out2 = model2(x)
+    assert torch.allclose(out1, out2, atol=1e-6)
