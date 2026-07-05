@@ -28,3 +28,6 @@ Thumbs.db
 data/
 checkpoints/
 .codegraph/
+.pytest_cache/
+.ruff_cache/
+.opencode/
