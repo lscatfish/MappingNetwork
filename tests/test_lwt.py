@@ -2,7 +2,6 @@
 
 import os
 
-import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -113,7 +112,6 @@ def make_one_batch_loader(device):
     return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=8)
 
 
-@pytest.mark.parametrize('device', ['cpu'])
 def test_lwt_trainer_resume(tmp_path, device):
     target_net = CNN2().to(device)
     loss_fn = MappingLoss().to(device)
