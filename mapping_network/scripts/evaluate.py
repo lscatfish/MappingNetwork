@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--device', type=str, default=None)
     args = parser.parse_args()
 
-    with open(args.config) as f:
+    with open(args.config, encoding='utf-8') as f:
         cfg = yaml.safe_load(f)
 
     device = (
@@ -77,13 +77,15 @@ def main():
             checkpoint['latent_dim'],
             checkpoint.get('alpha', 0.01),
             device,
+            w_seed=checkpoint.get('w_seed', 12345),
         )
-        mapping.load_state_dict(checkpoint['state_dict'])
+        mapping.load_state_dict(checkpoint['state_dict'], strict=False)
         theta_hat = mapping()
     elif checkpoint['training_strategy'] == 'lwt':
         # Rebuild layer mappings and load each state_dict
         layer_mappings = nn.ModuleDict()
-        for name, gen_cfg in checkpoint['layer_generator_configs'].items():
+        w_seed_base = checkpoint.get('w_seed', 12345)
+        for idx, (name, gen_cfg) in enumerate(checkpoint['layer_generator_configs'].items()):
             group_size = target_net.get_group_param_size(name)
             mapping = build_generator(
                 gen_cfg.get('type', 'linear'),
@@ -91,8 +93,9 @@ def main():
                 gen_cfg['latent_dim'],
                 gen_cfg.get('alpha', 0.01),
                 device,
+                w_seed=w_seed_base + idx,
             )
-            mapping.load_state_dict(checkpoint['state_dict'][name])
+            mapping.load_state_dict(checkpoint['state_dict'][name], strict=False)
             layer_mappings[name] = mapping
         # Concatenate in the same order as target net param groups
         group_order = checkpoint.get('layer_group_order', list(layer_mappings.keys()))

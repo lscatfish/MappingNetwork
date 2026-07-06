@@ -1,0 +1,39 @@
+# CNN1_3Conv + LWT 逐层训练配置
+target_net: cnn1_3conv
+training_strategy: lwt
+batch_size: 32
+epochs: 15
+seed: 42
+optimizer: adamw
+lr: 0.001
+weight_decay: 0.0001
+scheduler: cosine_annealing
+min_lr: 0.00001
+alpha: 0.01
+lrd:
+  enabled: false   # CNN1_3Conv 总参数仅 ~3.2 万，无需 LRD
+layer_generators:
+  conv1:
+    type: linear
+    latent_dim: 64
+    alpha: 0.01
+  conv2:
+    type: linear
+    latent_dim: 256
+    alpha: 0.01
+  conv3:
+    type: linear
+    latent_dim: 256
+    alpha: 0.01
+  fc1:
+    type: linear
+    latent_dim: 64
+    alpha: 0.01
+lambda_st_init: 0.1
+lambda_sm_init: 0.1
+lambda_al_init: 0.1
+sigma_noise: 0.0001
+device: cuda
+log_interval: 100
+checkpoint_dir: checkpoints
+save_interval: 3

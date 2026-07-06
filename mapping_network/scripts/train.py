@@ -26,7 +26,7 @@ def set_seed(seed: int):
 
 
 def load_config(path):
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -113,12 +113,14 @@ def main():
     append_log = args.resume is not None
 
     if cfg['training_strategy'] == 'slvt':
+        w_seed = cfg.get('w_seed', 12345)
         mapping = build_generator(
             cfg.get('generator_type', 'linear'),
             target_net.get_total_params(),
             cfg['latent_dim'],
             cfg.get('alpha', 0.01),
             device,
+            w_seed=w_seed,
         )
         print(f'Latent dim: {cfg["latent_dim"]}')
         print(f'Trainable: {mapping.trainable_params():,}')
@@ -146,6 +148,7 @@ def main():
                 'alpha': cfg.get('alpha', 0.01),
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
+                'w_seed': w_seed,
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
@@ -172,6 +175,7 @@ def main():
                 'training_strategy': 'lwt',
                 'lrd_config': lrd_config,
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
+                'w_seed': cfg.get('w_seed', 12345),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),

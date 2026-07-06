@@ -29,7 +29,7 @@ from mapping_network.factory import TARGET_NET_MAP
 
 
 def load_config(path):
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -234,7 +234,7 @@ def main():
     torch.save(checkpoint, final_path)
 
     results_path = os.path.join(checkpoint_dir, f'{experiment_name}_results.json')
-    with open(results_path, 'w') as f:
+    with open(results_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2)
 
     logger.info(f'Final baseline saved to {final_path}')

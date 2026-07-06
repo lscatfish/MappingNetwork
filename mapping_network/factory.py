@@ -23,10 +23,11 @@ def build_target_net(target_name: str, lrd_config: dict | None = None):
 
 
 def build_generator(
-    generator_type: str, target_total_params: int, latent_dim: int, alpha: float, device: str
+    generator_type: str, target_total_params: int, latent_dim: int, alpha: float, device: str,
+    w_seed: int | None = None,
 ):
     if generator_type not in GENERATOR_MAP:
         raise ValueError(f'Unknown generator type: {generator_type}')
     return GENERATOR_MAP[generator_type](
-        target_total_params, latent_dim, alpha=alpha, device=device
+        target_total_params, latent_dim, alpha=alpha, device=device, w_seed=w_seed
     )

@@ -21,7 +21,7 @@ def make_one_batch_loader(device):
 def test_slvt_checkpoint_reconstruction(device):
     """SLVT checkpoint 保存后能重建并复现相同 logits。"""
     target_net = build_target_net('cnn2').to(device)
-    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device)
+    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device, w_seed=12345)
     loss_fn = MappingLoss().to(device)
     loader = make_one_batch_loader(device)
 
@@ -44,6 +44,7 @@ def test_slvt_checkpoint_reconstruction(device):
             'alpha': 0.01,
             'sigma_noise': 0.01,
             'lrd_config': None,
+            'w_seed': 12345,
         },
         save_interval=0,
     )
@@ -68,8 +69,9 @@ def test_slvt_checkpoint_reconstruction(device):
         ckpt['latent_dim'],
         ckpt.get('alpha', 0.01),
         device,
+        w_seed=ckpt.get('w_seed', 12345),
     )
-    mapping_rebuilt.load_state_dict(ckpt['state_dict'])
+    mapping_rebuilt.load_state_dict(ckpt['state_dict'], strict=False)
     mapping_rebuilt.eval()
     target_rebuilt.eval()
 
@@ -105,6 +107,7 @@ def test_lwt_checkpoint_reconstruction(device):
             'training_strategy': 'lwt',
             'lrd_config': None,
             'sigma_noise': 0.01,
+            'w_seed': 12345,
         },
         save_interval=0,
     )
@@ -125,7 +128,8 @@ def test_lwt_checkpoint_reconstruction(device):
     # 重建
     target_rebuilt = build_target_net(ckpt['target_net'], ckpt.get('lrd_config')).to(device)
     layer_mappings = torch.nn.ModuleDict()
-    for name, gen_cfg in ckpt['layer_generator_configs'].items():
+    w_seed_base = ckpt.get('w_seed', 12345)
+    for idx, (name, gen_cfg) in enumerate(ckpt['layer_generator_configs'].items()):
         group_size = target_rebuilt.get_group_param_size(name)
         mapping = build_generator(
             gen_cfg.get('type', 'linear'),
@@ -133,8 +137,9 @@ def test_lwt_checkpoint_reconstruction(device):
             gen_cfg['latent_dim'],
             gen_cfg.get('alpha', 0.01),
             device,
+            w_seed=w_seed_base + idx,
         )
-        mapping.load_state_dict(ckpt['state_dict'][name])
+        mapping.load_state_dict(ckpt['state_dict'][name], strict=False)
         layer_mappings[name] = mapping
 
     group_order = ckpt.get('layer_group_order', list(layer_mappings.keys()))

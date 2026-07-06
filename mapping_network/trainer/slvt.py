@@ -163,6 +163,12 @@ class SLVTTrainer:
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
+        # 剔除大 buffer（W_fixed, W_fixed_mean, b_fixed），用 w_seed 重建
+        full_state = self.mapping_net.state_dict()
+        light_state = {
+            k: v for k, v in full_state.items()
+            if k not in ('W_fixed', 'W_fixed_mean', 'b_fixed')
+        }
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'slvt'),
@@ -171,8 +177,9 @@ class SLVTTrainer:
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
+            'w_seed': self.checkpoint_metadata.get('w_seed', 12345),
             'loss_fn_state_dict': self.loss_fn.state_dict(),
-            'state_dict': self.mapping_net.state_dict(),
+            'state_dict': light_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_test_acc': self.best_test_acc,
@@ -185,7 +192,8 @@ class SLVTTrainer:
 
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.mapping_net.load_state_dict(checkpoint['state_dict'])
+        # state_dict 缺失大 buffer，load 时 strict=False 让现有 buffer 保留（已由 w_seed 重建）
+        self.mapping_net.load_state_dict(checkpoint['state_dict'], strict=False)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
@@ -197,7 +205,7 @@ class SLVTTrainer:
     def save_results(self, results):
         """保存训练结果到 JSON。"""
         results_path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}_results.json')
-        with open(results_path, 'w') as f:
+        with open(results_path, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2)
         return results_path
 
