@@ -124,7 +124,10 @@ def main():
         )
         print(f'Latent dim: {cfg["latent_dim"]}')
         print(f'Trainable: {mapping.trainable_params():,}')
-        print(f'Fixed mapping weights: {mapping.W_fixed.numel():,}')
+        total_params = sum(p.numel() for p in mapping.parameters()) + sum(
+            b.numel() for b in mapping.buffers()
+        )
+        print(f'Fixed params: {total_params - mapping.trainable_params():,}')
 
         trainer = SLVTTrainer(
             mapping,

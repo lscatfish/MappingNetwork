@@ -25,4 +25,6 @@ def build_target_net(target_name: str, lrd_config: dict | None = None):
 def build_generator(generator_type: str, generator_config: dict, device: str):
     if generator_type not in GENERATOR_MAP:
         raise ValueError(f'Unknown generator type: {generator_type}')
-    return GENERATOR_MAP[generator_type](**generator_config, device=device)
+    config = dict(generator_config)
+    config.pop('device', None)
+    return GENERATOR_MAP[generator_type](**config, device=device)
