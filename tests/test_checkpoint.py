@@ -21,7 +21,7 @@ def make_one_batch_loader(device):
 def test_slvt_checkpoint_reconstruction(device):
     """SLVT checkpoint 保存后能重建并复现相同 logits。"""
     target_net = build_target_net('cnn2').to(device)
-    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device)
+    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device, w_seed=42)
     loss_fn = MappingLoss().to(device)
     loader = make_one_batch_loader(device)
 
@@ -44,6 +44,12 @@ def test_slvt_checkpoint_reconstruction(device):
             'alpha': 0.01,
             'sigma_noise': 0.01,
             'lrd_config': None,
+            'generator_config': {
+                'target_total_params': target_net.get_total_params(),
+                'latent_dim': 64,
+                'alpha': 0.01,
+                'w_seed': 42,
+            },
         },
         save_interval=0,
     )
@@ -64,14 +70,10 @@ def test_slvt_checkpoint_reconstruction(device):
     target_rebuilt = build_target_net(ckpt['target_net'], ckpt.get('lrd_config')).to(device)
     mapping_rebuilt = build_generator(
         ckpt.get('generator_type', 'linear'),
-        {
-            'target_total_params': target_rebuilt.get_total_params(),
-            'latent_dim': ckpt['latent_dim'],
-            'alpha': ckpt.get('alpha', 0.01),
-        },
+        ckpt['generator_config'],
         device,
     )
-    mapping_rebuilt.load_state_dict(ckpt['state_dict'])
+    mapping_rebuilt.load_persistent_state_dict(ckpt['generator_state_dict'])
     mapping_rebuilt.eval()
     target_rebuilt.eval()
 

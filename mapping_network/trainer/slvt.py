@@ -171,8 +171,9 @@ class SLVTTrainer:
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
+            'generator_config': self.checkpoint_metadata.get('generator_config'),
+            'generator_state_dict': self.mapping_net.persistent_state_dict(),
             'loss_fn_state_dict': self.loss_fn.state_dict(),
-            'state_dict': self.mapping_net.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_test_acc': self.best_test_acc,
@@ -185,7 +186,7 @@ class SLVTTrainer:
 
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.mapping_net.load_state_dict(checkpoint['state_dict'])
+        self.mapping_net.load_persistent_state_dict(checkpoint['generator_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
