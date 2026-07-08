@@ -54,3 +54,11 @@ def test_load_persistent_state_dict_restores_trainable():
     gen.z.data.fill_(0.0)
     missing, unexpected = gen.load_persistent_state_dict({'z': original_z})
     assert torch.allclose(gen.z, original_z)
+
+
+def test_linear_mapping_network_w_seed_reproducible():
+    gen1 = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu', w_seed=123)
+    gen2 = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu', w_seed=123)
+    assert torch.allclose(gen1.W_fixed, gen2.W_fixed)
+    gen3 = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu', w_seed=456)
+    assert not torch.allclose(gen1.W_fixed, gen3.W_fixed)

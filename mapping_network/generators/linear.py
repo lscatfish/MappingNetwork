@@ -10,13 +10,20 @@ class LinearMappingNetwork(ParameterGenerator):
     """线性参数生成网络：固定正交权重 + 可学习 z。"""
 
     def __init__(
-        self, target_total_params: int, latent_dim: int, alpha: float = 0.01, device: str = 'cpu'
+        self,
+        target_total_params: int,
+        latent_dim: int,
+        alpha: float = 0.01,
+        device: str = 'cpu',
+        w_seed: int | None = None,
     ):
         super().__init__()
         self.P = target_total_params
         self.d = latent_dim
         self.alpha = alpha
 
+        if w_seed is not None:
+            torch.manual_seed(w_seed)
         W = torch.empty(self.P, self.d, device=device)
         init.orthogonal_(W)
         self.register_buffer('W_fixed', W)
