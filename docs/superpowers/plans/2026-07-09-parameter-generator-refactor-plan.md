@@ -139,9 +139,7 @@ class ParameterGenerator(nn.Module, ABC):
 Modify `mapping_network/factory.py`:
 
 ```python
-from mapping_network.generators.cnn import CNNMappingNetwork
 from mapping_network.generators.linear import LinearMappingNetwork
-from mapping_network.generators.multilayer_linear import MultiLayerLinearMappingNetwork
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
@@ -155,8 +153,6 @@ TARGET_NET_MAP = {
 
 GENERATOR_MAP = {
     'linear': LinearMappingNetwork,
-    'multilayer_linear': MultiLayerLinearMappingNetwork,
-    'cnn': CNNMappingNetwork,
 }
 
 
@@ -173,7 +169,7 @@ def build_generator(generator_type: str, generator_config: dict, device: str):
     return GENERATOR_MAP[generator_type](**generator_config, device=device)
 ```
 
-(The new generator imports will fail until Task 2/3 create the files; comment them out or add empty stubs first if you prefer to commit Task 1 independently.)
+New generator map entries are added in Task 3 and Task 4.
 
 - [ ] **Step 4: Run tests**
 
@@ -402,6 +398,17 @@ git add mapping_network/generators/multilayer_linear.py tests/test_generators.py
 git commit -m "feat: add MultiLayerLinearMappingNetwork generator"
 ```
 
+Also register it in `mapping_network/factory.py`:
+
+```python
+from mapping_network.generators.multilayer_linear import MultiLayerLinearMappingNetwork
+
+GENERATOR_MAP = {
+    'linear': LinearMappingNetwork,
+    'multilayer_linear': MultiLayerLinearMappingNetwork,
+}
+```
+
 ---
 
 ### Task 4: CNNMappingNetwork
@@ -550,6 +557,18 @@ git add mapping_network/generators/cnn.py tests/test_generators.py
 git commit -m "feat: add CNNMappingNetwork generator"
 ```
 
+Also register it in `mapping_network/factory.py`:
+
+```python
+from mapping_network.generators.cnn import CNNMappingNetwork
+
+GENERATOR_MAP = {
+    'linear': LinearMappingNetwork,
+    'multilayer_linear': MultiLayerLinearMappingNetwork,
+    'cnn': CNNMappingNetwork,
+}
+```
+
 ---
 
 ### Task 5: TargetNet.assemble_params
@@ -590,7 +609,7 @@ Expected: FAIL (`assemble_params` missing)
 
 - [ ] **Step 3: Implement**
 
-Add to `mapping_network/target_nets/base.py` inside `TargetNet`:
+Ensure `mapping_network/target_nets/base.py` imports `torch` at the top (add `import torch` if missing). Then add to `TargetNet`:
 
 ```python
     def assemble_params(self, group_outputs: list[torch.Tensor] | dict[str, torch.Tensor]) -> torch.Tensor:
