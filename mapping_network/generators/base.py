@@ -29,3 +29,12 @@ class ParameterGenerator(nn.Module, ABC):
 
     def trainable_params(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def persistent_state_dict(self) -> dict:
+        """默认只保存可学习参数；固定 buffer 由 __init__ 重建。"""
+        return {k: v for k, v in self.named_parameters() if v.requires_grad}
+
+    def load_persistent_state_dict(self, state: dict):
+        """从 checkpoint 恢复可学习参数。"""
+        missing, unexpected = self.load_state_dict(state, strict=False)
+        return missing, unexpected

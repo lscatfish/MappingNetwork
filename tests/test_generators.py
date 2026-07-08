@@ -38,3 +38,19 @@ def test_linear_mapping_network_aux_methods(device='cuda'):
     l_align = gen.align_loss()
     assert l_align.shape == ()
     assert l_align.requires_grad
+
+
+def test_persistent_state_dict_only_trainable():
+    gen = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu')
+    state = gen.persistent_state_dict()
+    assert 'z' in state
+    assert 'W_fixed' not in state
+    assert all(v.requires_grad for v in state.values())
+
+
+def test_load_persistent_state_dict_restores_trainable():
+    gen = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu')
+    original_z = gen.z.detach().clone()
+    gen.z.data.fill_(0.0)
+    missing, unexpected = gen.load_persistent_state_dict({'z': original_z})
+    assert torch.allclose(gen.z, original_z)
