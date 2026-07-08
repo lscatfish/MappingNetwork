@@ -1,5 +1,6 @@
 from mapping_network.generators.linear import LinearMappingNetwork
 from mapping_network.generators.multilayer_linear import MultiLayerLinearMappingNetwork
+from mapping_network.generators.cnn import CNNMappingNetwork
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
@@ -14,6 +15,7 @@ TARGET_NET_MAP = {
 GENERATOR_MAP = {
     'linear': LinearMappingNetwork,
     'multilayer_linear': MultiLayerLinearMappingNetwork,
+    'cnn': CNNMappingNetwork,
 }
 
 
