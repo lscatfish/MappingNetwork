@@ -113,13 +113,16 @@ def main():
     append_log = args.resume is not None
 
     if cfg['training_strategy'] == 'slvt':
+        generator_config = {
+            'target_total_params': target_net.get_total_params(),
+            'latent_dim': cfg['latent_dim'],
+            'alpha': cfg.get('alpha', 0.01),
+        }
+        if 'w_seed' in cfg:
+            generator_config['w_seed'] = cfg['w_seed']
         mapping = build_generator(
             cfg.get('generator_type', 'linear'),
-            {
-                'target_total_params': target_net.get_total_params(),
-                'latent_dim': cfg['latent_dim'],
-                'alpha': cfg.get('alpha', 0.01),
-            },
+            generator_config,
             device,
         )
         print(f'Latent dim: {cfg["latent_dim"]}')
@@ -151,6 +154,7 @@ def main():
                 'alpha': cfg.get('alpha', 0.01),
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
+                'generator_config': generator_config,
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
