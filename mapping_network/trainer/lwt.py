@@ -73,16 +73,10 @@ class LWTTrainer:
         for group_name, group_size in self.param_groups:
             if group_name not in layer_generators:
                 raise ValueError(f'Missing generator config for layer group: {group_name}')
-            config = layer_generators[group_name]
-            self.layer_mappings[group_name] = build_generator(
-                config['type'],
-                {
-                    'target_total_params': group_size,
-                    'latent_dim': config['latent_dim'],
-                    'alpha': config['alpha'],
-                },
-                device=device,
-            )
+            config = layer_generators[group_name].copy()
+            gen_type = config.pop('type')
+            config['target_total_params'] = group_size
+            self.layer_mappings[group_name] = build_generator(gen_type, config, device)
 
         # Collect trainable params: all generator params + loss lambda params
         trainable_params = [
@@ -121,15 +115,14 @@ class LWTTrainer:
         return logger
 
     def _generate_all_theta(self):
-        """Concatenate all per-layer mapping outputs into full theta_hat.
+        """Assemble all per-layer mapping outputs into full theta_hat.
 
         Each layer's MappingNetwork produces theta^(l) of size P_l.
-        Concatenating in group order yields the full parameter vector theta_hat.
+        The target net assembles group outputs in order into the full
+        parameter vector theta_hat.
         """
-        all_theta = []
-        for group_name, _ in self.param_groups:
-            all_theta.append(self.layer_mappings[group_name]())
-        return torch.cat(all_theta)
+        outputs = [self.layer_mappings[name]() for name, _ in self.param_groups]
+        return self.target_net.assemble_params(outputs)
 
     def _compute_offsets(self):
         """Compute (start, end) indices for each group in the concatenated theta_hat."""
@@ -251,7 +244,7 @@ class LWTTrainer:
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'loss_fn_state_dict': self.loss_fn.state_dict(),
             'state_dict': {
-                name: mapping.state_dict() for name, mapping in self.layer_mappings.items()
+                name: mapping.persistent_state_dict() for name, mapping in self.layer_mappings.items()
             },
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
@@ -266,7 +259,7 @@ class LWTTrainer:
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         for name, state in checkpoint['state_dict'].items():
-            self.layer_mappings[name].load_state_dict(state)
+            self.layer_mappings[name].load_persistent_state_dict(state)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)

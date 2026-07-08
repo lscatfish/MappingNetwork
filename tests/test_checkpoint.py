@@ -88,10 +88,10 @@ def test_lwt_checkpoint_reconstruction(device):
     loss_fn = MappingLoss().to(device)
     loader = make_one_batch_loader(device)
     layer_generators = {
-        'conv1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
-        'conv2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
-        'fc1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
-        'fc2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01},
+        'conv1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01, 'w_seed': 1},
+        'conv2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01, 'w_seed': 2},
+        'fc1': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01, 'w_seed': 3},
+        'fc2': {'type': 'linear', 'latent_dim': 16, 'alpha': 0.01, 'w_seed': 4},
     }
     trainer = LWTTrainer(
         target_net,
@@ -131,19 +131,14 @@ def test_lwt_checkpoint_reconstruction(device):
     layer_mappings = torch.nn.ModuleDict()
     for name, gen_cfg in ckpt['layer_generator_configs'].items():
         group_size = target_rebuilt.get_group_param_size(name)
-        mapping = build_generator(
-            gen_cfg.get('type', 'linear'),
-            {
-                'target_total_params': group_size,
-                'latent_dim': gen_cfg['latent_dim'],
-                'alpha': gen_cfg.get('alpha', 0.01),
-            },
-            device,
-        )
-        mapping.load_state_dict(ckpt['state_dict'][name])
+        gen_type = gen_cfg.get('type', 'linear')
+        config = {k: v for k, v in gen_cfg.items() if k != 'type'}
+        config['target_total_params'] = group_size
+        mapping = build_generator(gen_type, config, device)
+        mapping.load_persistent_state_dict(ckpt['state_dict'][name])
         layer_mappings[name] = mapping
 
     group_order = ckpt.get('layer_group_order', list(layer_mappings.keys()))
-    theta_rebuilt = torch.cat([layer_mappings[name]() for name in group_order])
+    theta_rebuilt = target_rebuilt.assemble_params({name: layer_mappings[name]() for name in group_order})
     logits_rebuilt = target_rebuilt.functional_forward(x, theta_rebuilt)
     assert torch.allclose(logits_ref, logits_rebuilt, atol=1e-6)
