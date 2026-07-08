@@ -73,9 +73,11 @@ def main():
     if checkpoint['training_strategy'] == 'slvt':
         mapping = build_generator(
             checkpoint.get('generator_type', 'linear'),
-            target_net.get_total_params(),
-            checkpoint['latent_dim'],
-            checkpoint.get('alpha', 0.01),
+            {
+                'target_total_params': target_net.get_total_params(),
+                'latent_dim': checkpoint['latent_dim'],
+                'alpha': checkpoint.get('alpha', 0.01),
+            },
             device,
         )
         mapping.load_state_dict(checkpoint['state_dict'])
@@ -87,9 +89,11 @@ def main():
             group_size = target_net.get_group_param_size(name)
             mapping = build_generator(
                 gen_cfg.get('type', 'linear'),
-                group_size,
-                gen_cfg['latent_dim'],
-                gen_cfg.get('alpha', 0.01),
+                {
+                    'target_total_params': group_size,
+                    'latent_dim': gen_cfg['latent_dim'],
+                    'alpha': gen_cfg.get('alpha', 0.01),
+                },
                 device,
             )
             mapping.load_state_dict(checkpoint['state_dict'][name])

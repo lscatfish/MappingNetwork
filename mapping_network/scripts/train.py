@@ -115,9 +115,11 @@ def main():
     if cfg['training_strategy'] == 'slvt':
         mapping = build_generator(
             cfg.get('generator_type', 'linear'),
-            target_net.get_total_params(),
-            cfg['latent_dim'],
-            cfg.get('alpha', 0.01),
+            {
+                'target_total_params': target_net.get_total_params(),
+                'latent_dim': cfg['latent_dim'],
+                'alpha': cfg.get('alpha', 0.01),
+            },
             device,
         )
         print(f'Latent dim: {cfg["latent_dim"]}')

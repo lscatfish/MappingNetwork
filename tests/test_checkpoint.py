@@ -64,9 +64,11 @@ def test_slvt_checkpoint_reconstruction(device):
     target_rebuilt = build_target_net(ckpt['target_net'], ckpt.get('lrd_config')).to(device)
     mapping_rebuilt = build_generator(
         ckpt.get('generator_type', 'linear'),
-        target_rebuilt.get_total_params(),
-        ckpt['latent_dim'],
-        ckpt.get('alpha', 0.01),
+        {
+            'target_total_params': target_rebuilt.get_total_params(),
+            'latent_dim': ckpt['latent_dim'],
+            'alpha': ckpt.get('alpha', 0.01),
+        },
         device,
     )
     mapping_rebuilt.load_state_dict(ckpt['state_dict'])
@@ -129,9 +131,11 @@ def test_lwt_checkpoint_reconstruction(device):
         group_size = target_rebuilt.get_group_param_size(name)
         mapping = build_generator(
             gen_cfg.get('type', 'linear'),
-            group_size,
-            gen_cfg['latent_dim'],
-            gen_cfg.get('alpha', 0.01),
+            {
+                'target_total_params': group_size,
+                'latent_dim': gen_cfg['latent_dim'],
+                'alpha': gen_cfg.get('alpha', 0.01),
+            },
             device,
         )
         mapping.load_state_dict(ckpt['state_dict'][name])

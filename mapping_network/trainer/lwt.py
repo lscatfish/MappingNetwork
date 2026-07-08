@@ -76,9 +76,11 @@ class LWTTrainer:
             config = layer_generators[group_name]
             self.layer_mappings[group_name] = build_generator(
                 config['type'],
-                group_size,
-                config['latent_dim'],
-                alpha=config['alpha'],
+                {
+                    'target_total_params': group_size,
+                    'latent_dim': config['latent_dim'],
+                    'alpha': config['alpha'],
+                },
                 device=device,
             )
 
