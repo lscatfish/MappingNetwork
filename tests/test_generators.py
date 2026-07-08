@@ -2,9 +2,9 @@ import pytest
 import torch
 
 from mapping_network.generators.base import ParameterGenerator
+from mapping_network.generators.cnn import CNNMappingNetwork
 from mapping_network.generators.linear import LinearMappingNetwork
 from mapping_network.generators.multilayer_linear import MultiLayerLinearMappingNetwork
-from mapping_network.generators.cnn import CNNMappingNetwork
 
 
 def test_parameter_generator_is_abstract():
