@@ -3,6 +3,7 @@ import torch
 
 from mapping_network.generators.base import ParameterGenerator
 from mapping_network.generators.linear import LinearMappingNetwork
+from mapping_network.generators.multilayer_linear import MultiLayerLinearMappingNetwork
 
 
 def test_parameter_generator_is_abstract():
@@ -62,3 +63,25 @@ def test_linear_mapping_network_w_seed_reproducible():
     assert torch.allclose(gen1.W_fixed, gen2.W_fixed)
     gen3 = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu', w_seed=456)
     assert not torch.allclose(gen1.W_fixed, gen3.W_fixed)
+
+
+def test_multilayer_linear_mapping_network(device='cuda'):
+    if not torch.cuda.is_available():
+        device = 'cpu'
+    gen = MultiLayerLinearMappingNetwork(50, 8, alpha=0.01, hidden_dim=16, num_hidden=2, device=device)
+    theta = gen()
+    assert theta.shape == (50,)
+    assert theta.device.type == device
+    assert gen.trainable_params() > 0
+
+    theta_noisy = gen.noisy_forward(0.01)
+    assert theta_noisy.shape == (50,)
+    assert theta_noisy.requires_grad
+
+    l_smooth = gen.smooth_loss()
+    assert l_smooth.shape == ()
+    assert l_smooth.requires_grad
+
+    l_align = gen.align_loss()
+    assert l_align.shape == ()
+    assert l_align.requires_grad
