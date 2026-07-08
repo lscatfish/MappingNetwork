@@ -1,5 +1,6 @@
 import torch
 
+from mapping_network.factory import build_target_net
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
@@ -102,3 +103,16 @@ def test_cnn2_lrd_functional_matches_module(device='cuda'):
     y_func = net.functional_forward(x, theta)
     y_mod = net(x)
     assert y_func.shape == y_mod.shape
+
+
+def test_target_net_assemble_params():
+    net = build_target_net('cnn2')
+    group_names = net.get_group_names()
+    group_sizes = [net.get_group_param_size(name) for name in group_names]
+    outputs = [torch.randn(size) for size in group_sizes]
+    theta = net.assemble_params(outputs)
+    assert theta.shape == (sum(group_sizes),)
+
+    # dict input
+    theta2 = net.assemble_params({name: out for name, out in zip(group_names, outputs)})
+    assert torch.allclose(theta, theta2)

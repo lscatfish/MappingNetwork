@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+import torch
 import torch.nn as nn
 
 from .lrd_config import LRDConfig
@@ -152,6 +153,14 @@ class TargetNet(nn.Module):
                 seen.add(name)
                 names.append(name)
         return names
+
+    def assemble_params(self, group_outputs: list[torch.Tensor] | dict[str, torch.Tensor]) -> torch.Tensor:
+        """按 group_order 拼接每层的输出得到完整 theta_hat。"""
+        if isinstance(group_outputs, dict):
+            outputs = [group_outputs[name] for name in self.get_group_names()]
+        else:
+            outputs = group_outputs
+        return torch.cat(outputs)
 
     def functional_forward(self, x, theta_hat):
         params = {}
