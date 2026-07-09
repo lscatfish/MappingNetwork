@@ -18,7 +18,6 @@ Usage:
 import argparse
 
 import torch
-import torch.nn as nn
 import yaml
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -65,41 +64,37 @@ def main():
     test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     test_loader = DataLoader(test_dataset, batch_size=cfg.get('batch_size', 64))
 
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
 
     target_net = build_target_net(checkpoint['target_net'], checkpoint.get('lrd_config'))
     target_net = target_net.to(device)
 
     if checkpoint['training_strategy'] == 'slvt':
-        mapping = build_generator(
-            checkpoint.get('generator_type', 'linear'),
-            target_net.get_total_params(),
-            checkpoint['latent_dim'],
-            checkpoint.get('alpha', 0.01),
-            device,
-            w_seed=checkpoint.get('w_seed', 12345),
-        )
-        mapping.load_state_dict(checkpoint['state_dict'], strict=False)
+        # 从 checkpoint 恢复 gen_config
+        gen_config = checkpoint.get('gen_config', {
+            'type': checkpoint.get('generator_type', 'linear'),
+            'latent_dim': checkpoint['latent_dim'],
+            'alpha': checkpoint.get('alpha', 0.01),
+            'w_seed': checkpoint.get('w_seed', 12345),
+        })
+        mapping = build_generator(gen_config, target_net.get_total_params(), device=device)
+        mapping.load_light_state_dict(checkpoint['state_dict'])
         theta_hat = mapping()
     elif checkpoint['training_strategy'] == 'lwt':
         # Rebuild layer mappings and load each state_dict
-        layer_mappings = nn.ModuleDict()
+        layer_mappings = torch.nn.ModuleDict()
         w_seed_base = checkpoint.get('w_seed', 12345)
         for idx, (name, gen_cfg) in enumerate(checkpoint['layer_generator_configs'].items()):
             group_size = target_net.get_group_param_size(name)
-            mapping = build_generator(
-                gen_cfg.get('type', 'linear'),
-                group_size,
-                gen_cfg['latent_dim'],
-                gen_cfg.get('alpha', 0.01),
-                device,
-                w_seed=w_seed_base + idx,
-            )
-            mapping.load_state_dict(checkpoint['state_dict'][name], strict=False)
+            config = dict(gen_cfg)
+            config['w_seed'] = w_seed_base + idx
+            mapping = build_generator(config, target_total_params=group_size, device=device)
+            mapping.load_light_state_dict(checkpoint['state_dict'][name])
             layer_mappings[name] = mapping
         # Concatenate in the same order as target net param groups
         group_order = checkpoint.get('layer_group_order', list(layer_mappings.keys()))
-        theta_hat = torch.cat([layer_mappings[name]() for name in group_order])
+        theta_parts = [layer_mappings[name]() for name in group_order]
+        theta_hat = torch.cat(theta_parts)
     else:
         raise ValueError(f'Unknown strategy: {checkpoint["training_strategy"]}')
 

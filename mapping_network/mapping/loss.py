@@ -17,9 +17,11 @@ class MappingLoss(nn.Module):
         lambda_st_init: float = 0.1,
         lambda_sm_init: float = 0.1,
         lambda_al_init: float = 0.1,
+        n_stab_samples: int = 5,
     ):
         super().__init__()
         self.sigma_noise = sigma_noise
+        self.n_stab_samples = n_stab_samples
         self.lambda_st = nn.Parameter(torch.tensor(lambda_st_init))
         self.lambda_sm = nn.Parameter(torch.tensor(lambda_sm_init))
         self.lambda_al = nn.Parameter(torch.tensor(lambda_al_init))
@@ -39,10 +41,13 @@ class MappingLoss(nn.Module):
         y_hat = target_net.functional_forward(x, theta_hat)
         l_task = F.cross_entropy(y_hat, y)
 
-        # === L_stab: stability loss (Equation 28) ===
-        theta_noisy = mapping_net.noisy_forward(self.sigma_noise)
-        y_hat_noisy = target_net.functional_forward(x, theta_noisy)
-        l_stab = F.mse_loss(y_hat_noisy, y_hat.detach())
+        # === L_stab: stability loss (Equation 28) — 多次采样降低方差 ===
+        l_stab = 0.0
+        for _ in range(self.n_stab_samples):
+            theta_noisy = mapping_net.noisy_forward(self.sigma_noise)
+            y_hat_noisy = target_net.functional_forward(x, theta_noisy)
+            l_stab = l_stab + F.mse_loss(y_hat_noisy, y_hat.detach())
+        l_stab = l_stab / self.n_stab_samples
 
         # === L_smooth & L_align 由 generator 自行实现，避免暴露内部细节 ===
         l_smooth = mapping_net.smooth_loss()

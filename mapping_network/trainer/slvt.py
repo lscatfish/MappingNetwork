@@ -68,7 +68,8 @@ class SLVTTrainer:
             trainable_params, optimizer_name, lr=lr, weight_decay=weight_decay
         )
         self.scheduler = build_scheduler(
-            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr
+            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr,
+            warmup_epochs=self.checkpoint_metadata.get('warmup_epochs', max(1, epochs // 10)),
         )
 
     def _setup_logger(self):
@@ -124,9 +125,12 @@ class SLVTTrainer:
                 total += y.size(0)
                 correct += predicted.eq(y).sum().item()
 
-            # 4. 反向传播
+            # 4. 反向传播 + 梯度裁剪
             self.optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                self.mapping_net.parameters(), max_norm=1.0
+            )
             self.optimizer.step()
 
             total_loss += loss.item()
@@ -163,12 +167,9 @@ class SLVTTrainer:
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
-        # 剔除大 buffer（W_fixed, W_fixed_mean, b_fixed），用 w_seed 重建
-        full_state = self.mapping_net.state_dict()
-        light_state = {
-            k: v for k, v in full_state.items()
-            if k not in ('W_fixed', 'W_fixed_mean', 'b_fixed')
-        }
+        # 通过 generator 的 light_state_dict() 接口获取轻量 state_dict
+        # 大 buffer（如 W_fixed）不保存，由 w_seed 重建
+        light_state = self.mapping_net.light_state_dict()
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'slvt'),
@@ -192,8 +193,8 @@ class SLVTTrainer:
 
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        # state_dict 缺失大 buffer，load 时 strict=False 让现有 buffer 保留（已由 w_seed 重建）
-        self.mapping_net.load_state_dict(checkpoint['state_dict'], strict=False)
+        # 通过 generator 的 load_light_state_dict() 接口加载（自动重建大 buffer）
+        self.mapping_net.load_light_state_dict(checkpoint['state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)

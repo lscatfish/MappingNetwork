@@ -64,14 +64,16 @@ def test_slvt_checkpoint_reconstruction(device):
     # 重建
     target_rebuilt = build_target_net(ckpt['target_net'], ckpt.get('lrd_config')).to(device)
     mapping_rebuilt = build_generator(
-        ckpt.get('generator_type', 'linear'),
-        target_rebuilt.get_total_params(),
-        ckpt['latent_dim'],
-        ckpt.get('alpha', 0.01),
-        device,
-        w_seed=ckpt.get('w_seed', 12345),
+        {
+            'type': ckpt.get('generator_type', 'linear'),
+            'latent_dim': ckpt['latent_dim'],
+            'alpha': ckpt.get('alpha', 0.01),
+            'w_seed': ckpt.get('w_seed', 12345),
+        },
+        target_total_params=target_rebuilt.get_total_params(),
+        device=device,
     )
-    mapping_rebuilt.load_state_dict(ckpt['state_dict'], strict=False)
+    mapping_rebuilt.load_light_state_dict(ckpt['state_dict'])
     mapping_rebuilt.eval()
     target_rebuilt.eval()
 
@@ -131,15 +133,10 @@ def test_lwt_checkpoint_reconstruction(device):
     w_seed_base = ckpt.get('w_seed', 12345)
     for idx, (name, gen_cfg) in enumerate(ckpt['layer_generator_configs'].items()):
         group_size = target_rebuilt.get_group_param_size(name)
-        mapping = build_generator(
-            gen_cfg.get('type', 'linear'),
-            group_size,
-            gen_cfg['latent_dim'],
-            gen_cfg.get('alpha', 0.01),
-            device,
-            w_seed=w_seed_base + idx,
-        )
-        mapping.load_state_dict(ckpt['state_dict'][name], strict=False)
+        config = dict(gen_cfg)
+        config['w_seed'] = w_seed_base + idx
+        mapping = build_generator(config, target_total_params=group_size, device=device)
+        mapping.load_light_state_dict(ckpt['state_dict'][name])
         layer_mappings[name] = mapping
 
     group_order = ckpt.get('layer_group_order', list(layer_mappings.keys()))

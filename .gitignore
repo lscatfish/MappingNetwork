@@ -32,6 +32,9 @@ checkpoints/
 .ruff_cache/
 .opencode/
 
+# CodeBuddy
+.codebuddy/
+
 # Logs / verification outputs
 train_verify.txt
 mapping_networks_full.txt

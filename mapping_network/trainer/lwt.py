@@ -74,14 +74,12 @@ class LWTTrainer:
         for idx, (group_name, group_size) in enumerate(self.param_groups):
             if group_name not in layer_generators:
                 raise ValueError(f'Missing generator config for layer group: {group_name}')
-            config = layer_generators[group_name]
+            config = dict(layer_generators[group_name])
+            config['w_seed'] = w_seed_base + idx
             self.layer_mappings[group_name] = build_generator(
-                config['type'],
-                group_size,
-                config['latent_dim'],
-                alpha=config['alpha'],
+                config,
+                target_total_params=group_size,
                 device=device,
-                w_seed=w_seed_base + idx,
             )
 
         # Collect trainable params: all generator params + loss lambda params
@@ -97,7 +95,8 @@ class LWTTrainer:
             trainable_params, optimizer_name, lr=lr, weight_decay=weight_decay
         )
         self.scheduler = build_scheduler(
-            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr
+            self.optimizer, scheduler_name, epochs=epochs, min_lr=min_lr,
+            warmup_epochs=self.checkpoint_metadata.get('warmup_epochs', max(1, epochs // 10)),
         )
 
     def _setup_logger(self):
@@ -199,6 +198,11 @@ class LWTTrainer:
 
             self.optimizer.zero_grad()
             loss.backward()
+            # 梯度裁剪：防止首轮梯度爆炸
+            clip_params = []
+            for mapping in self.layer_mappings.values():
+                clip_params.extend(mapping.parameters())
+            torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
             self.optimizer.step()
 
             total_loss += loss.item()
@@ -240,15 +244,11 @@ class LWTTrainer:
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
-        # Save dict of {layer_name: mapping.state_dict()} plus metadata
-        # 剔除大 buffer（W_fixed, W_fixed_mean, b_fixed），用 w_seed 重建
+        # Save dict of {layer_name: mapping.light_state_dict()} plus metadata
+        # 大 buffer 由 generator 的 _rebuild_buffers() 从 w_seed 重建
         light_state = {}
         for name, mapping in self.layer_mappings.items():
-            full = mapping.state_dict()
-            light_state[name] = {
-                k: v for k, v in full.items()
-                if k not in ('W_fixed', 'W_fixed_mean', 'b_fixed')
-            }
+            light_state[name] = mapping.light_state_dict()
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'lwt'),
@@ -273,8 +273,8 @@ class LWTTrainer:
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         for name, state in checkpoint['state_dict'].items():
-            # strict=False：大 buffer 已由 w_seed 重建，只 load z 等小参数
-            self.layer_mappings[name].load_state_dict(state, strict=False)
+            # 通过 generator 的 load_light_state_dict() 接口加载（自动重建大 buffer）
+            self.layer_mappings[name].load_light_state_dict(state)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)
