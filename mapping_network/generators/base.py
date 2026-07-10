@@ -54,25 +54,26 @@ class ParameterGenerator(nn.Module, ABC):
     # 子类通过以下方法控制哪些 buffer 需要排除、如何重建。
 
     def _rebuild_buffers(self):
-        """从 w_seed 等属性重建大 buffer（在 load_light_state_dict 前调用）。
+        """从 w_seed 等属性重建大 buffer（在 load_persistent_state_dict 前调用）。
 
         子类如果用了 w_seed 初始化大 buffer，应重写此方法。
         默认不做任何事（适用于没有大 buffer 的生成器）。
         """
         pass
 
-    def light_state_dict(self) -> dict:
-        """返回不含大 buffer 的 state_dict，用于 checkpoint 保存。
+    def persistent_state_dict(self) -> dict:
+        """返回需要持久化的 state_dict，用于 checkpoint 保存。
 
-        默认返回完整 state_dict。子类应重写以排除大 buffer。
+        默认返回完整 state_dict。子类应重写以排除可由配置重建的大 buffer。
         """
         return self.state_dict()
 
-    def load_light_state_dict(self, state_dict: dict):
-        """加载 light_state_dict（不含大 buffer），自动处理缺失 key。
+    def load_persistent_state_dict(self, state_dict: dict):
+        """加载 persistent_state_dict。
 
-        先调用 _rebuild_buffers() 重建大 buffer，然后 strict=False 加载。
-        子类可以重写以实现更精确的加载逻辑。
+        先调用 _rebuild_buffers() 重建大 buffer（如果需要），然后加载。
+        默认使用 strict=True；子类若需要容忍缺失 key（如大 buffer 已由 _rebuild_buffers
+        生成而 state_dict 中不含），可重写为 strict=False。
         """
         self._rebuild_buffers()
-        self.load_state_dict(state_dict, strict=False)
+        self.load_state_dict(state_dict, strict=True)

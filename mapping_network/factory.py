@@ -45,13 +45,19 @@ def build_generator(
 ):
     """Build a parameter generator from a config dict.
 
+    Factory 只负责：
+    1. 根据 generator_config['type'] 做类型分发。
+    2. 将 target_total_params 和 device 注入 kwargs。
+    3. 其余键值原样透传给具体 generator 类，由 generator 自行解析。
+
+    这样新增 generator 类型时无需修改 factory。
+
     Args:
         generator_config: Dict with keys:
             - 'type': generator type name from GENERATOR_MAP
             - 'latent_dim': latent dimension d
             - 'alpha': modulation coefficient (default 0.01)
-            - 'w_seed': seed for W_fixed reconstruction (default 12345)
-            - other generator-specific parameters
+            - other generator-specific parameters (e.g. 'w_seed', 'layer_name')
         target_total_params: Total number of target network parameters (compressed).
         device: Device string.
 
@@ -67,18 +73,13 @@ def build_generator(
         raise ValueError(f'Unknown generator type: {gen_type}')
 
     cls = GENERATOR_MAP[gen_type]
-    # 提取通用参数
-    kwargs = {
-        'target_total_params': target_total_params,
-        'latent_dim': generator_config['latent_dim'],
-        'alpha': generator_config.get('alpha', 0.01),
-        'device': device,
-        'w_seed': generator_config.get('w_seed', 12345),
-    }
-    # 提取生成器特定参数（排除通用参数和 LWT 特有的 lrd_rank/lrd_enabled）
-    skip_keys = {'type', 'latent_dim', 'alpha', 'w_seed', 'lrd_rank', 'lrd_enabled'}
-    for k, v in generator_config.items():
-        if k not in skip_keys:
-            kwargs[k] = v
+    # 透传配置，仅排除 factory 职责内的键
+    kwargs = dict(generator_config)
+    kwargs.pop('type', None)
+    kwargs['target_total_params'] = target_total_params
+    kwargs['device'] = device
+    # lrd_rank/lrd_enabled 是 LWT 目标网络配置，不属于 generator 参数
+    kwargs.pop('lrd_rank', None)
+    kwargs.pop('lrd_enabled', None)
 
     return cls(**kwargs)

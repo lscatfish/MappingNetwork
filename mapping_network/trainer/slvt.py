@@ -167,20 +167,19 @@ class SLVTTrainer:
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
-        # 通过 generator 的 light_state_dict() 接口获取轻量 state_dict
-        # 大 buffer（如 W_fixed）不保存，由 w_seed 重建
-        light_state = self.mapping_net.light_state_dict()
+        # 通过 generator 的 persistent_state_dict() 接口获取需要持久化的 state_dict
+        # 大 buffer（如 W_fixed）不保存，由 generator 根据内部配置重建
+        persistent_state = self.mapping_net.persistent_state_dict()
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'slvt'),
-            'generator_type': self.checkpoint_metadata.get('generator_type', 'linear'),
+            'gen_config': self.checkpoint_metadata.get('gen_config'),
             'latent_dim': self.checkpoint_metadata.get('latent_dim'),
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
-            'w_seed': self.checkpoint_metadata.get('w_seed', 12345),
             'loss_fn_state_dict': self.loss_fn.state_dict(),
-            'state_dict': light_state,
+            'state_dict': persistent_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_test_acc': self.best_test_acc,
@@ -193,8 +192,8 @@ class SLVTTrainer:
 
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        # 通过 generator 的 load_light_state_dict() 接口加载（自动重建大 buffer）
-        self.mapping_net.load_light_state_dict(checkpoint['state_dict'])
+        # 通过 generator 的 load_persistent_state_dict() 接口加载（自动重建大 buffer）
+        self.mapping_net.load_persistent_state_dict(checkpoint['state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)

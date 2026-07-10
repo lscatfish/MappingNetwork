@@ -25,21 +25,68 @@ class LinearMappingNetwork(ParameterGenerator):
     - b_fixed=0，方差完全由 W@z + alpha*W_mod@z 提供
     """
 
+    # 默认 w_seed。当用户未指定时，LinearMappingNetwork 用 (P, d) 派生一个
+    # 确定性的 seed，保证不同 (P, d) 组合得到不同 W_fixed / W_mod。
+    _DEFAULT_W_SEED = 0x4C4D4E54  # 'LMNT' ascii
+
     def __init__(
         self, target_total_params: int, latent_dim: int, alpha: float = 0.01, device: str = 'cpu',
-        w_seed: int | None = None, z_init_std: float = 0.5,
+        w_seed: int | None = None, z_init_std: float = 0.5, layer_name: str | None = None,
     ):
+        """线性参数生成网络。
+
+        Args:
+            target_total_params: 目标网络压缩后总参数 P。
+            latent_dim: 隐向量维度 d。
+            alpha: modulation 系数。
+            device: 设备。
+            w_seed: 重建大 buffer 的种子。**由 generator 内部管理**。
+                优先级：用户显式指定 > 基于 layer_name 派生 > 基于 (P, d) 派生。
+            z_init_std: z 初始化标准差。
+            layer_name: 可选的层名（LWT 场景下由 trainer 注入）。
+                如果提供，会与 w_seed 联合派生一个唯一 seed，使各层 W_fixed 不同。
+        """
         super().__init__()
         self.P = target_total_params
         self.d = latent_dim
         self.alpha = alpha
-        self.w_seed = w_seed
+
+        # w_seed 完全是 generator 私有实现细节，外部不应读写。
+        # 当外部提供 layer_name 时，自动派生该层唯一 seed；否则基于 (P, d) 派生。
+        self.w_seed = self._derive_seed(
+            target_total_params, latent_dim, w_seed, layer_name
+        )
 
         # 固定种子生成 W_fixed 和 W_mod，便于 checkpoint 重建
         self._init_buffers(device)
 
         # 缩小初始方差，使 a_i 集中在 tanh 线性区
         self.z = nn.Parameter(torch.randn(self.d, device=device) * z_init_std)
+
+    @classmethod
+    def _derive_seed(
+        cls, target_total_params: int, latent_dim: int,
+        w_seed: int | None, layer_name: str | None,
+    ) -> int:
+        """根据用户输入、layer_name 或 (P, d) 派生一个确定性 seed。
+
+        优先级：
+        1. 用户显式指定 w_seed 且未提供 layer_name -> 直接使用 w_seed。
+        2. 用户显式指定 w_seed 且提供 layer_name -> 基于 (w_seed, layer_name) hash。
+        3. 未指定 w_seed 但提供 layer_name -> 基于 (DEFAULT, layer_name) hash。
+        4. 否则 -> 基于 (P, d) hash。
+
+        注意：此方法**不**依赖外部 idx。LWT 各层通过传入不同 layer_name
+        自动获得不同 seed，且 generator 内部可自行演化 seed 策略。
+        """
+        if w_seed is not None:
+            base = int(w_seed)
+            if layer_name is not None:
+                return hash((base, str(layer_name))) & 0x7FFFFFFF
+            return base
+        if layer_name is not None:
+            return hash((cls._DEFAULT_W_SEED, str(layer_name))) & 0x7FFFFFFF
+        return hash((cls._DEFAULT_W_SEED, target_total_params, latent_dim)) & 0x7FFFFFFF
 
     def _init_buffers(self, device: str):
         """从 w_seed 重建所有大 buffer。"""
@@ -101,17 +148,17 @@ class LinearMappingNetwork(ParameterGenerator):
     # 大 buffer（W_fixed, W_mod, W_fixed_mean, b_fixed）不存入 checkpoint，
     # 由 w_seed 重建。
 
-    _LIGHT_EXCLUDE = frozenset({'W_fixed', 'W_mod', 'W_fixed_mean', 'b_fixed'})
+    _PERSISTENT_EXCLUDE = frozenset({'W_fixed', 'W_mod', 'W_fixed_mean', 'b_fixed'})
 
-    def light_state_dict(self) -> dict:
+    def persistent_state_dict(self) -> dict:
         """返回不含大 buffer 的 state_dict。"""
         return {
             k: v for k, v in self.state_dict().items()
-            if k not in self._LIGHT_EXCLUDE
+            if k not in self._PERSISTENT_EXCLUDE
         }
 
-    def load_light_state_dict(self, state_dict: dict):
-        """加载 light_state_dict，自动重建大 buffer。"""
+    def load_persistent_state_dict(self, state_dict: dict):
+        """加载 persistent_state_dict，自动重建大 buffer。"""
         self._rebuild_buffers()
         self.load_state_dict(state_dict, strict=False)
 

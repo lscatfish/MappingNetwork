@@ -67,15 +67,15 @@ class LWTTrainer:
         ]
 
         # Create one ParameterGenerator per layer/group using ModuleDict
-        # so .to(device) propagates to all sub-modules
+        # so .to(device) propagates to all sub-modules.
+        # 每层的 generator 配置中注入 layer_name，由 generator 内部派生自己的 seed。
         self.layer_generators = layer_generators
         self.layer_mappings: nn.ModuleDict[str, ParameterGenerator] = nn.ModuleDict()
-        w_seed_base = self.checkpoint_metadata.get('w_seed', 12345)
-        for idx, (group_name, group_size) in enumerate(self.param_groups):
+        for group_name, group_size in self.param_groups:
             if group_name not in layer_generators:
                 raise ValueError(f'Missing generator config for layer group: {group_name}')
             config = dict(layer_generators[group_name])
-            config['w_seed'] = w_seed_base + idx
+            config['layer_name'] = group_name
             self.layer_mappings[group_name] = build_generator(
                 config,
                 target_total_params=group_size,
@@ -244,11 +244,11 @@ class LWTTrainer:
     def save_checkpoint(self, results, suffix='_final', epoch=None, is_best=False):
         path = os.path.join(self.checkpoint_dir, f'{self.experiment_name}{suffix}.pth')
 
-        # Save dict of {layer_name: mapping.light_state_dict()} plus metadata
-        # 大 buffer 由 generator 的 _rebuild_buffers() 从 w_seed 重建
-        light_state = {}
+        # Save dict of {layer_name: mapping.persistent_state_dict()} plus metadata
+        # 大 buffer 由 generator 根据内部配置重建
+        persistent_state = {}
         for name, mapping in self.layer_mappings.items():
-            light_state[name] = mapping.light_state_dict()
+            persistent_state[name] = mapping.persistent_state_dict()
         checkpoint = {
             'target_net': self.checkpoint_metadata.get('target_net'),
             'training_strategy': self.checkpoint_metadata.get('training_strategy', 'lwt'),
@@ -257,9 +257,8 @@ class LWTTrainer:
             'lrd_config': self.checkpoint_metadata.get('lrd_config'),
             'alpha': self.checkpoint_metadata.get('alpha'),
             'sigma_noise': self.checkpoint_metadata.get('sigma_noise'),
-            'w_seed': self.checkpoint_metadata.get('w_seed', 12345),
             'loss_fn_state_dict': self.loss_fn.state_dict(),
-            'state_dict': light_state,
+            'state_dict': persistent_state,
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_test_acc': self.best_test_acc,
@@ -273,8 +272,8 @@ class LWTTrainer:
     def load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         for name, state in checkpoint['state_dict'].items():
-            # 通过 generator 的 load_light_state_dict() 接口加载（自动重建大 buffer）
-            self.layer_mappings[name].load_light_state_dict(state)
+            # 通过 generator 的 load_persistent_state_dict() 接口加载（自动重建大 buffer）
+            self.layer_mappings[name].load_persistent_state_dict(state)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         self.best_test_acc = checkpoint.get('best_test_acc', -1.0)

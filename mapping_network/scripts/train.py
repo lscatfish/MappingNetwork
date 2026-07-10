@@ -114,18 +114,20 @@ def main():
     append_log = args.resume is not None
 
     if cfg['training_strategy'] == 'slvt':
-        w_seed = cfg.get('w_seed', 12345)
         generator_type = cfg.get('generator_type', 'linear')
 
-        # 构建 generator_config dict
+        # 构建 generator_config dict —— 只透传 generator 需要的配置，
+        # factory 负责注入 target_total_params 和 device，不再硬编码 w_seed
         gen_config = {
             'type': generator_type,
             'latent_dim': cfg['latent_dim'],
             'alpha': cfg.get('alpha', 0.01),
-            'w_seed': w_seed,
         }
+        # 可选：如果用户显式指定了 w_seed，透传给 generator（由 generator 内部管理）
+        if 'w_seed' in cfg:
+            gen_config['w_seed'] = cfg['w_seed']
 
-        # 生成器特定参数从 cfg 直接透传
+        # 生成器特定参数从 cfg 直接透传（factory 不解析，直接透给 generator）
         if generator_type == 'kron_structured':
             gen_config['d1'] = cfg.get('d1')
             gen_config['d2'] = cfg.get('d2')
@@ -204,13 +206,11 @@ def main():
             checkpoint_metadata={
                 'target_net': cfg['target_net'],
                 'training_strategy': 'slvt',
-                'generator_type': generator_type,
                 'gen_config': gen_config,
                 'latent_dim': cfg['latent_dim'],
                 'alpha': cfg.get('alpha', 0.01),
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
-                'w_seed': w_seed,
                 'warmup_epochs': cfg.get('warmup_epochs', max(1, cfg['epochs'] // 10)),
             },
             save_interval=cfg.get('save_interval', 1),
@@ -238,7 +238,6 @@ def main():
                 'training_strategy': 'lwt',
                 'lrd_config': lrd_config,
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
-                'w_seed': cfg.get('w_seed', 12345),
                 'warmup_epochs': cfg.get('warmup_epochs', max(1, cfg['epochs'] // 10)),
             },
             save_interval=cfg.get('save_interval', 1),
