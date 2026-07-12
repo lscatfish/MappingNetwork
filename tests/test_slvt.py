@@ -58,7 +58,7 @@ class TestSLVT:
         assert 'target_net' in ckpt
         assert 'training_strategy' in ckpt
         assert 'latent_dim' in ckpt
-        assert 'generator_type' in ckpt
+        assert 'gen_config' in ckpt
         assert 'lrd_config' in ckpt
         assert ckpt['training_strategy'] == 'slvt'
 

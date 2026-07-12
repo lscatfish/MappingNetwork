@@ -131,11 +131,21 @@ class LinearMappingNetwork(ParameterGenerator):
 
         M(z) = tanh(W_fixed @ z + alpha * W_mod @ z + b)
         nabla_z M_i = tanh'(a_i) * (W_fixed[i, :] + alpha * W_mod[i, :])
+
+        精确计算每行的梯度范数平方：
+        ||W_fixed[i,:] + alpha*W_mod[i,:]||^2
+        = ||W_fixed[i,:]||^2 + 2*alpha*<W_fixed[i,:], W_mod[i,:]> + alpha^2*||W_mod[i,:]||^2
+
+        由于 W_fixed 和 W_mod 都行归一化（||W[i,:]||=1），简化为：
+        = 1 + 2*alpha*<W_fixed[i,:], W_mod[i,:]> + alpha^2
+        但此处不做近似，直接逐行计算。
         """
         a = self._compute_activation(self.z)
         tanh_derivative_sq = (1 - torch.tanh(a) ** 2) ** 2
-        # ||W_fixed[i,:] + alpha*W_mod[i,:]||^2 ≈ 1 + alpha^2（行归一化，忽略交叉项）
-        term1 = (1 + self.alpha ** 2) * tanh_derivative_sq.sum()
+        # 精确计算每行的 ||W_fixed[i,:] + alpha*W_mod[i,:]||^2
+        grad_rows = self.W_fixed + self.alpha * self.W_mod
+        grad_norm_sq = grad_rows.pow(2).sum(dim=1)
+        term1 = (grad_norm_sq * tanh_derivative_sq).sum()
         return term1 / (self.P * self.d)
 
     def align_loss(self) -> torch.Tensor:

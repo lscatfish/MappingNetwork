@@ -11,9 +11,8 @@ import os
 
 import torch
 import yaml
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
 
+from mapping_network.data import get_mnist_loaders
 from mapping_network.factory import build_generator, build_target_net
 from mapping_network.mapping.loss import MappingLoss
 from mapping_network.trainer.lwt import LWTTrainer
@@ -81,16 +80,7 @@ def main():
     )
 
     # Data
-    transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ]
-    )
-    train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
-    test_dataset = datasets.MNIST('./data', train=False, transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=cfg['batch_size'])
+    train_loader, test_loader = get_mnist_loaders(cfg['batch_size'], root='./data')
 
     lrd_config = cfg.get('lrd', {})
 
@@ -126,62 +116,6 @@ def main():
         # 可选：如果用户显式指定了 w_seed，透传给 generator（由 generator 内部管理）
         if 'w_seed' in cfg:
             gen_config['w_seed'] = cfg['w_seed']
-
-        # 生成器特定参数从 cfg 直接透传（factory 不解析，直接透给 generator）
-        if generator_type == 'kron_structured':
-            gen_config['d1'] = cfg.get('d1')
-            gen_config['d2'] = cfg.get('d2')
-        elif generator_type == 'kron_weight':
-            gen_config['rank'] = cfg.get('kron_rank', 8)
-            # layer_shapes 从 target_net 的 param slices 构建
-            slices = target_net.get_param_slices()
-            layer_shapes = {}
-            for s in slices:
-                if s.kind == 'full':
-                    name = s.name
-                    if s.is_bias:
-                        layer_shapes[name] = (s.shape[0], 1, True)
-                    else:
-                        m = s.shape[0]
-                        n = 1
-                        for dim in s.shape[1:]:
-                            n *= dim
-                        layer_shapes[name] = (m, n, False)
-                elif s.kind == 'lrd':
-                    layer_shapes[s.weight_name] = (s.u_shape[0], s.v_shape[0], False)
-                    layer_shapes[s.bias_name] = (s.b_shape[0], 1, True)
-            gen_config['layer_shapes'] = layer_shapes
-        elif generator_type == 'pca':
-            trajectory_path = cfg.get('weight_trajectory_path')
-            if trajectory_path:
-                data = torch.load(trajectory_path, map_location='cpu', weights_only=False)
-                trajectory = data['trajectory']
-                from sklearn.decomposition import PCA
-                pca = PCA(n_components=cfg['latent_dim'])
-                pca.fit(trajectory.numpy())
-                gen_config['pca_components'] = torch.tensor(
-                    pca.components_, dtype=torch.float32
-                )
-                gen_config['pca_mean'] = torch.tensor(
-                    pca.mean_, dtype=torch.float32
-                )
-        elif generator_type == 'adaptive_dim':
-            gen_config['gate_init'] = cfg.get('gate_init', 0.0)
-            gen_config['active_dim'] = cfg.get('active_dim')
-        elif generator_type == 'manifold_reg':
-            gen_config['n_geodesic_samples'] = cfg.get('n_geodesic_samples', 5)
-            gen_config['geodesic_eps'] = cfg.get('geodesic_eps', 1e-3)
-            gen_config['ib_beta'] = cfg.get('ib_beta', 0.001)
-            anchor_path = cfg.get('anchor_checkpoint')
-            if anchor_path:
-                ckpt = torch.load(anchor_path, map_location='cpu', weights_only=False)
-                gen_config['theta_anchor'] = ckpt.get('theta_anchor')
-        elif generator_type == 'superposition':
-            gen_config['num_tasks'] = cfg.get('num_tasks', 1)
-            gen_config['task_id'] = cfg.get('task_id', 0)
-        elif generator_type == 'tt_structured':
-            gen_config['tt_shape'] = cfg.get('tt_shape', 2)
-            gen_config['tt_rank'] = cfg.get('tt_rank', 2)
 
         mapping = build_generator(gen_config, target_net.get_total_params(), device=device)
         print(f'Generator: {generator_type}')

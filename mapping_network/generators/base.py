@@ -9,7 +9,7 @@ class ParameterGenerator(nn.Module, ABC):
 
     子类应通过 nn.Linear、nn.Conv2d 等标准模块定义生成网络结构。
     固定参数通过 requires_grad=False 或 register_buffer 管理。
-    子类可以重写 light_state_dict() 和 load_light_state_dict() 来控制 checkpoint 的保存/恢复。
+    子类可以重写 persistent_state_dict() 和 load_persistent_state_dict() 来控制 checkpoint 的保存/恢复。
     """
 
     @abstractmethod
@@ -49,7 +49,7 @@ class ParameterGenerator(nn.Module, ABC):
             count += buf.numel()
         return count
 
-    # ===== Checkpoint 恢复接口 =====
+    # ===== Checkpoint 持久化接口 =====
     # 大 buffer（如 W_fixed, W_mod）不需要存入 checkpoint，可由 w_seed 重建。
     # 子类通过以下方法控制哪些 buffer 需要排除、如何重建。
 

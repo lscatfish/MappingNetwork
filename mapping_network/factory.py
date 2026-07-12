@@ -1,12 +1,4 @@
-from mapping_network.generators.adaptive_dim import AdaptiveDimMappingNetwork
-from mapping_network.generators.hadamard import HadamardMappingNetwork
-from mapping_network.generators.kron_structured import KronStructuredMappingNetwork
-from mapping_network.generators.kron_weight import KronWeightMappingNetwork
 from mapping_network.generators.linear import LinearMappingNetwork
-from mapping_network.generators.manifold_regularized import ManifoldRegularizedMappingNetwork
-from mapping_network.generators.pca_linear import PCABasedMappingNetwork
-from mapping_network.generators.superposition import SuperpositionMappingNetwork
-from mapping_network.generators.tt_structured import TTStructuredMappingNetwork
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
@@ -20,14 +12,6 @@ TARGET_NET_MAP = {
 
 GENERATOR_MAP = {
     'linear': LinearMappingNetwork,
-    'hadamard': HadamardMappingNetwork,
-    'kron_structured': KronStructuredMappingNetwork,
-    'tt_structured': TTStructuredMappingNetwork,
-    'kron_weight': KronWeightMappingNetwork,
-    'pca': PCABasedMappingNetwork,
-    'adaptive_dim': AdaptiveDimMappingNetwork,
-    'manifold_reg': ManifoldRegularizedMappingNetwork,
-    'superposition': SuperpositionMappingNetwork,
 }
 
 
