@@ -157,7 +157,7 @@ class LinearMappingNetwork(ParameterGenerator):
         return term1 / (self.P * self.d)
 
     def align_loss(self) -> torch.Tensor:
-        """L_align = 1 - cos(z, mean(W_mod_effective, dim=0))。
+        """L_align = 1 - cos(z, effective_weight_mean)。
 
         论文 Eq. 30: 调制后的有效权重行均值为 W_fixed_mean + α * z。
         这里 z 是当前隐变量，衡量 z 与有效权重均值方向的对齐程度。
