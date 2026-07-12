@@ -5,16 +5,25 @@ import torch.nn as nn
 
 
 class ParameterGenerator(nn.Module, ABC):
-    """参数生成网络基类。负责生成 theta_hat 以及相关的辅助量。
+    """参数生成网络基类。负责生成目标网络参数以及相关的辅助量。
 
     子类应通过 nn.Linear、nn.Conv2d 等标准模块定义生成网络结构。
     固定参数通过 requires_grad=False 或 register_buffer 管理。
     子类可以重写 persistent_state_dict() 和 load_persistent_state_dict() 来控制 checkpoint 的保存/恢复。
+
+    输出形状约定：
+        forward() 返回的参数张量形状由子类决定。当前 LinearMappingNetwork
+        返回一维 theta_hat [P]，但未来 CNN/MLP 风格 generator 可返回多维张量。
+        target_net.functional_forward 负责接受并解析其形状，不假设一维。
     """
 
     @abstractmethod
     def forward(self) -> torch.Tensor:
-        """返回 theta_hat [P']，P' 是目标网络压缩后的总参数数。"""
+        """返回生成的参数张量。
+
+        当前实现返回一维 theta_hat [P]（P 为目标网络压缩后总参数数）。
+        子类可返回多维张量，由 target_net.functional_forward 负责解析形状。
+        """
         pass
 
     @abstractmethod
@@ -29,7 +38,7 @@ class ParameterGenerator(nn.Module, ABC):
 
     @abstractmethod
     def align_loss(self) -> torch.Tensor:
-        """返回 L_align = 1 - cos(z, mean(W_mod, dim=0))。"""
+        """返回 L_align = 1 - cos(z, effective_weight_mean)。"""
         pass
 
     def trainable_params(self) -> int:
@@ -50,7 +59,7 @@ class ParameterGenerator(nn.Module, ABC):
         return count
 
     # ===== Checkpoint 持久化接口 =====
-    # 大 buffer（如 W_fixed, W_mod）不需要存入 checkpoint，可由 w_seed 重建。
+    # 大 buffer（如 W_fixed）不需要存入 checkpoint，可由 w_seed 重建。
     # 子类通过以下方法控制哪些 buffer 需要排除、如何重建。
 
     def _rebuild_buffers(self):

@@ -128,6 +128,7 @@ class LinearMappingNetwork(ParameterGenerator):
         return self.W_fixed @ z + self.alpha * (z ** 2).sum() + self.b_fixed
 
     def forward(self) -> torch.Tensor:
+        """返回一维 theta_hat [P]，P 为目标网络压缩后总参数数。"""
         return torch.tanh(self._compute_activation(self.z))
 
     def noisy_forward(self, sigma: float) -> torch.Tensor:
