@@ -1,8 +1,12 @@
-from mapping_network.generators.linear import LinearMappingNetwork
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
 from mapping_network.target_nets.lrd_config import LRDConfig
+
+# 触发所有 generator 子类的装饰器执行，填充 GENERATOR_REGISTRY
+from mapping_network.generators import base as _generator_base
+from mapping_network.generators import linear  # noqa: F401
+
 
 TARGET_NET_MAP = {
     'cnn1': CNN1,
@@ -10,9 +14,7 @@ TARGET_NET_MAP = {
     'cnn1_3conv': CNN1_3Conv,
 }
 
-GENERATOR_MAP = {
-    'linear': LinearMappingNetwork,
-}
+GENERATOR_MAP = _generator_base.GENERATOR_REGISTRY
 
 
 def build_target_net(target_name: str, lrd_config: dict | None = None):
@@ -30,15 +32,19 @@ def build_generator(
     """Build a parameter generator from a config dict.
 
     Factory 只负责：
-    1. 根据 generator_config['type'] 做类型分发。
+    1. 根据 generator_config['type'] 从注册表查找对应类。
     2. 将 target_total_params 和 device 注入 kwargs。
     3. 其余键值原样透传给具体 generator 类，由 generator 自行解析。
 
-    这样新增 generator 类型时无需修改 factory。
+    新增 generator 类型时只需：
+    - 创建新文件并继承 ParameterGenerator
+    - 使用 @register_generator('name') 装饰器
+    - 在 mapping_network/generators/__init__.py 中 import 该类（触发注册）
+    无需修改 factory.py。
 
     Args:
         generator_config: Dict with keys:
-            - 'type': generator type name from GENERATOR_MAP
+            - 'type': generator type name from GENERATOR_REGISTRY
             - 'latent_dim': latent dimension d
             - 'alpha': modulation coefficient (default 0.01)
             - other generator-specific parameters (e.g. 'w_seed', 'layer_name')

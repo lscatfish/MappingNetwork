@@ -4,9 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import ParameterGenerator
+from .base import ParameterGenerator, register_generator
 
 
+@register_generator('linear')
 class LinearMappingNetwork(ParameterGenerator):
     """线性参数生成网络：固定行归一化权重 + 可学习 z。
 

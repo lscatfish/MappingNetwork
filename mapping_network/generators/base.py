@@ -3,6 +3,29 @@ from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
 
+# 全局 generator 注册表。新增 generator 时只需在类定义上加 @register_generator('name')，
+# 并在 mapping_network/generators/__init__.py 中 import 该类（触发装饰器执行）。
+GENERATOR_REGISTRY: dict[str, type['ParameterGenerator']] = {}
+
+
+def register_generator(name: str):
+    """装饰器：将 ParameterGenerator 子类注册到 GENERATOR_REGISTRY。
+
+    用法：
+        @register_generator('linear')
+        class LinearMappingNetwork(ParameterGenerator):
+            ...
+    """
+    def decorator(cls: type['ParameterGenerator']) -> type['ParameterGenerator']:
+        if name in GENERATOR_REGISTRY:
+            raise ValueError(
+                f'Generator type "{name}" already registered to '
+                f'{GENERATOR_REGISTRY[name].__name__}'
+            )
+        GENERATOR_REGISTRY[name] = cls
+        return cls
+    return decorator
+
 
 class ParameterGenerator(nn.Module, ABC):
     """参数生成网络基类。负责生成目标网络参数以及相关的辅助量。
@@ -10,6 +33,10 @@ class ParameterGenerator(nn.Module, ABC):
     子类应通过 nn.Linear、nn.Conv2d 等标准模块定义生成网络结构。
     固定参数通过 requires_grad=False 或 register_buffer 管理。
     子类可以重写 persistent_state_dict() 和 load_persistent_state_dict() 来控制 checkpoint 的保存/恢复。
+
+    新增 generator 时，使用 @register_generator('name') 装饰器自动注册，
+    并在 mapping_network/generators/__init__.py 中 import 该类即可被 factory 识别，
+    无需修改 factory.py 中的 GENERATOR_MAP。
 
     输出形状约定：
         forward() 返回的参数张量形状由子类决定。当前 LinearMappingNetwork
