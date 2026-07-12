@@ -1,7 +1,7 @@
 # PR #11 代码修改详情报告 — Review 修改前后逐处对比
 
 > 文档状态：final
-> 日期：2026-07-12
+> 日期：2026-07-13
 > 目的：逐处记录因不符合 review 预期而重新修改的每一处代码，说明原始写法、修改后写法、以及是否符合 review 预期。
 > 测试验证环境：Windows 11, Python 3.13.6, PyTorch 2.11.0+cu128, NVIDIA RTX 4060
 > 测试命令：`.venv\Scripts\python.exe -m pytest tests/ -v`
@@ -10,11 +10,12 @@
 
 ## 1. 背景
 
-本项目经历了三轮 code review：
+本项目经历了四轮 code review：
 
 - **第一轮**：指出架构层面问题（硬编码、接口不统一、checkpoint 体积过大、modulation 退化等）。
 - **第二轮**：对修改后代码二次审查，指出部分地方仍不符合预期（w_seed 硬编码、strict=False 容忍缺失 key 等）。
 - **第三轮**：发现 4 个阻塞性缺陷导致包无法导入、测试全部 collection error，以及 SLVT/LWT/Baseline 三个 trainer 存在大量代码重复。
+- **第四轮**：指出 modulation 公式引入 W_mod 偏离论文 Eq. 20、_derive_seed 使用 Python hash() 跨进程不稳定、LWT 的 L_stab 未复用 n_stab_samples、align_loss 与论文 Eq. 30 不一致、factory 仍硬编码注册、forward docstring 限制扩展。
 
 本文档对最终修改后的每一处代码进行详细对比，说明其是否符合 review 的最终要求。
 
@@ -34,13 +35,22 @@
 
 ---
 
-**修改项 2：modulation 公式（P0 精度修复）**
+**修改项 2：modulation 公式对齐论文 Eq. 20（第四轮 review 必须修）**
 
-原始代码中 modulation 为全局标量 `alpha * ||z||²`，加到激活值上。这与论文 Figure 4 描述的逐行调制 `w_ij ← w_ij + alpha * z_i` 不一致。
+原始代码中 modulation 为全局标量 `alpha * ||z||²`。第一轮 review 时误认为这是退化为全局偏差，改为引入独立随机矩阵 W_mod 的 `alpha * (W_mod @ z)`。
 
-修改后新增 W_mod [P, d] 矩阵（行归一化），前向公式变为 `tanh(W_fixed @ z + alpha * W_mod @ z + b_fixed)`，实现论文描述的逐参数 modulation。
+第四轮 review 指出：论文 Eq. 20 的 `w_ij ← w_ij + α z_i` 展开后正是 `α * ||z||²` 的全局标量偏移，而非独立的随机投影路径。引入 W_mod 增加了模型容量，偏离了论文定义。
 
-**Review 预期**：逐参数 modulation 而非全局标量。已符合。
+修改后删除 W_mod 矩阵，严格回到论文公式：
+
+```python
+# 论文 Eq. 20: w_ij ← w_ij + α * z_i
+# 展开后: a = W_fixed @ z + α * ||z||² + b_fixed
+def _compute_activation(self, z):
+    return self.W_fixed @ z + self.alpha * (z ** 2).sum() + self.b_fixed
+```
+
+**Review 预期**：严格对齐论文 Eq. 20，不引入额外随机投影路径。已符合。
 
 ---
 
@@ -54,16 +64,26 @@
 
 ---
 
-**修改项 4：w_seed 管理（架构解耦）**
+**修改项 4：w_seed 管理与哈希稳定性（第四轮 review 必须修）**
 
 原始代码中 w_seed 由 trainer/factory 外部传入和计算，LWT 中每层 w_seed 由 trainer 通过 `w_seed_base + idx` 计算。
 
+第一轮修复将 w_seed 改为 generator 内部管理，使用 Python `hash()` 派生 seed。第四轮 review 指出 `hash()` 受 PYTHONHASHSEED 影响跨进程不稳定，导致 checkpoint 无法可靠重建。
+
 修改后：
-- 新增类方法 `_derive_seed()`，优先级为：用户显式指定 > 基于 layer_name hash > 基于 (P, d) hash
-- LWT 中 trainer 不再计算 `w_seed_base + idx`，只注入 `layer_name`，由 generator 内部派生
+- 使用 `hashlib.md5` 替代 `hash()`，保证跨进程/跨机器确定性
+- 优先级：用户显式指定 > 基于 layer_name 派生 > 基于 (P, d) 派生
 - 默认 seed 常量 `_DEFAULT_W_SEED = 0x4C4D4E54`
 
-**Review 预期**：w_seed 由 generator 内部管理。已符合。
+```python
+@staticmethod
+def _md5_hash(*parts) -> int:
+    key = ':'.join(str(p) for p in parts).encode('utf-8')
+    digest = hashlib.md5(key).hexdigest()
+    return int(digest[:8], 16) & 0x7FFFFFFF
+```
+
+**Review 预期**：seed 派生跨进程确定性，checkpoint 可靠重建。已符合。
 
 ---
 
@@ -75,23 +95,21 @@
 - 基类 `ParameterGenerator` 定义了 `persistent_state_dict()` 和 `load_persistent_state_dict()` 接口
 - `LinearMappingNetwork` 重写这两个方法，通过 `_PERSISTENT_EXCLUDE` 集合排除大 buffer
 - 新增 `_rebuild_buffers()` 方法从 w_seed 重建大 buffer
+- W_mod 已删除，`_PERSISTENT_EXCLUDE` 更新为 `{'W_fixed', 'W_fixed_mean', 'b_fixed'}`
 
 **Review 预期**：统一接口，非硬编码，子类可控。已符合。
 
 ---
 
-**修改项 6：smooth_loss 改为精确计算（第三轮 review 修复）**
+**修改项 6：smooth_loss 精确计算（对应论文 Eq. 23）**
 
-原始实现用 `(1 + alpha²)` 近似 `||W_fixed[i,:] + alpha*W_mod[i,:]||²`，忽略了交叉项 `2*alpha*<W_fixed[i,:], W_mod[i,:]>`。论文 Eq. 23 要求精确梯度范数。
+原始实现用 `(1 + alpha²)` 近似梯度范数。修改后逐行精确计算。
 
-修改后逐行精确计算：
+由于 modulation 改回 `α * ||z||²`，梯度变为 `nabla_z M_i = tanh'(a_i) * (W_fixed[i, :] + 2α * z)`：
 
 ```python
-# 原始（近似，忽略交叉项）
-term1 = (1 + self.alpha ** 2) * tanh_derivative_sq.sum()
-
-# 修改后（精确计算）
-grad_rows = self.W_fixed + self.alpha * self.W_mod
+# 精确计算每行的 ||W_fixed[i,:] + 2α * z||²
+grad_rows = self.W_fixed + (2 * self.alpha * self.z).unsqueeze(0)
 grad_norm_sq = grad_rows.pow(2).sum(dim=1)
 term1 = (grad_norm_sq * tanh_derivative_sq).sum()
 ```
@@ -100,23 +118,20 @@ term1 = (grad_norm_sq * tanh_derivative_sq).sum()
 
 ---
 
-**修改项 7：align_loss 的工程化扩展说明（第三轮 review 非阻塞观察）**
+**修改项 7：align_loss 对齐论文 Eq. 30（第四轮 review 建议修）**
 
-论文 Eq. 22 定义 `L_align = 1 - cos(z, mean(W_mod, dim=0))`，仅使用 W_mod 的均值方向。当前实现加入了 `W_fixed_mean`：
+原始实现使用 `W_fixed_mean + alpha * W_mod.mean(dim=0)`，引入了已删除的 W_mod。第四轮 review 指出论文 Eq. 30 的调制后有效权重行均值为 `W_fixed_mean + α * z`。
+
+修改后：
 
 ```python
-# 论文原始定义
-W_m = self.W_mod.mean(dim=0)
-
-# 当前实现（工程化扩展）
-W_m = self.W_fixed_mean + self.alpha * self.W_mod.mean(dim=0)
+def align_loss(self):
+    W_m = self.W_fixed_mean + self.alpha * self.z
+    cos_sim = F.cosine_similarity(self.z.unsqueeze(0), W_m.unsqueeze(0))
+    return 1 - cos_sim.squeeze()
 ```
 
-这是合理的工程化扩展：使 alignment 同时考虑固定权重方向（W_fixed 的均值）和调制方向（W_mod 的均值），而非仅调制方向。与论文语义一致，不改变 L_align 的核心功能（衡量 z 与权重矩阵均值方向的对齐程度）。
-
-reviewer 确认此为非阻塞观察，不阻塞合并。
-
-**Review 预期**：记录偏离原因，确认语义一致。已符合。
+**Review 预期**：对齐论文 Eq. 30，使用调制后有效权重的行均值。已符合。
 
 ---
 
@@ -130,15 +145,44 @@ reviewer 确认此为非阻塞观察，不阻塞合并。
 
 原始 docstring 引用旧接口名 `light_state_dict()` 和 `load_light_state_dict()`，修改后统一为 `persistent_state_dict()` 和 `load_persistent_state_dict()`。
 
-**Review 预期**：基类提供统一接口，docstring 与实际接口名一致。已符合。
+**修改项 3：forward docstring 不假设一维输出（第四轮 review 建议修）**
+
+原始 docstring 暗示一维输出，限制未来 CNN/MLP generator 扩展。修改后改为中性描述：
+
+```python
+def forward(self) -> torch.Tensor:
+    """返回生成的参数张量。
+
+    当前实现返回一维 theta_hat [P]（P 为目标网络压缩后总参数数）。
+    子类可返回多维张量，由 target_net.functional_forward 负责解析形状。
+    """
+```
+
+**修改项 4：装饰器注册机制（第四轮 review 建议修）**
+
+新增 `@register_generator(name)` 装饰器和全局 `GENERATOR_REGISTRY`：
+
+```python
+GENERATOR_REGISTRY: dict[str, type['ParameterGenerator']] = {}
+
+def register_generator(name: str):
+    def decorator(cls):
+        if name in GENERATOR_REGISTRY:
+            raise ValueError(f'Generator type "{name}" already registered')
+        GENERATOR_REGISTRY[name] = cls
+        return cls
+    return decorator
+```
+
+新增 generator 时只需 `@register_generator('name')` + 在 `__init__.py` 中 import，无需修改 factory.py。
+
+**Review 预期**：不限制输出形状，新增 generator 无需修改 factory。已符合。
 
 ---
 
 ### 2.3 `mapping_network/generators/__init__.py`
 
-**修改项：保持导出与实际模块一致**
-
-仅导出 `ParameterGenerator` 和 `LinearMappingNetwork`，与 factory 注册的 `GENERATOR_MAP` 保持一致。不导出不存在的 generator 类。
+仅导出 `ParameterGenerator`、`LinearMappingNetwork` 和 `register_generator`，与 factory 注册的 `GENERATOR_REGISTRY` 保持一致。
 
 **Review 预期**：导出与实际模块一致。已符合。
 
@@ -148,22 +192,22 @@ reviewer 确认此为非阻塞观察，不阻塞合并。
 
 **修改项 1：build_generator 接口重构**
 
-从位置参数 + **kwargs 改为 dict 配置驱动，新增 generator 时无需修改 factory。
+从位置参数 + **kwargs 改为 dict 配置驱动。
 
-**修改项 2：GENERATOR_MAP 清理（第三轮 review 阻塞性修复）**
+**修改项 2：GENERATOR_MAP 改为从注册表读取（第四轮 review 建议修）**
 
-原始代码注册了 8 个实验性 generator 类型（hadamard、kron_structured 等），但对应文件不存在，导致 `import mapping_network.factory` 时 `ModuleNotFoundError`。
-
-修正后 `GENERATOR_MAP` 仅注册实际存在的 `'linear'` 类型。
+原始代码硬编码 `GENERATOR_MAP = {'linear': LinearMappingNetwork}`，新增 generator 需手动修改 factory。修改后改为从装饰器注册表动态读取：
 
 ```python
-# 修改后
-GENERATOR_MAP = {
-    'linear': LinearMappingNetwork,
-}
+from mapping_network.generators import base as _generator_base
+from mapping_network.generators import linear  # noqa: F401 — 触发装饰器执行
+
+GENERATOR_MAP = _generator_base.GENERATOR_REGISTRY
 ```
 
-**Review 预期**：注册项与实际模块一致，包可正常导入。已符合。
+新增 generator 流程：创建新文件 + `@register_generator('name')` + `__init__.py` import，无需修改 factory.py。
+
+**Review 预期**：新增 generator 无需修改 factory。已符合。
 
 ---
 
@@ -190,19 +234,11 @@ SLVTTrainer 和 LWTTrainer 存在约 60% 的代码重复（`_setup_logger`、`sa
 
 **修改项 1-4：继承 BaseTrainer（第三轮 review 架构重构）**
 
-SLVTTrainer 从 255 行缩减到约 130 行，公共逻辑由 BaseTrainer 提供。子类只保留 SLVT 特有的训练逻辑和 checkpoint 字段构建。
+SLVTTrainer 从 255 行缩减到约 130 行，公共逻辑由 BaseTrainer 提供。
 
 **修改项 5：梯度裁剪改用基类钩子**
 
-```python
-# 原始（直接调用）
-torch.nn.utils.clip_grad_norm_(self.mapping_net.parameters(), max_norm=1.0)
-
-# 修改后（通过基类钩子）
-def _get_clip_params(self) -> list:
-    return list(self.mapping_net.parameters())
-# train_epoch 中调用 self._clip_grads()
-```
+通过 `_get_clip_params()` 钩子返回裁剪参数，`train_epoch` 中调用 `self._clip_grads()`。
 
 **Review 预期**：复用基类逻辑，消除重复。已符合。
 
@@ -214,25 +250,26 @@ def _get_clip_params(self) -> list:
 
 LWTTrainer 从 335 行缩减到约 190 行。
 
-**修改项 5：梯度裁剪参数缓存（第三轮 review 性能修复）**
+**修改项 5：梯度裁剪参数缓存**
 
-原始代码每个 batch 都重新遍历 `layer_mappings.values()` 收集裁剪参数。修改后在 `__init__` 中一次性缓存：
+`_clip_params_cache` 在 `__init__` 中一次性收集，避免每 batch 重复遍历。
+
+**修改项 6：L_stab 复用 n_stab_samples（第四轮 review 建议修）**
+
+原始 LWT 的 `_compute_layerwise_reg_loss` 中 L_stab 只采样一次，`n_stab_samples` 配置失效。修改后与 SLVT 的 `MappingLoss` 行为一致：
 
 ```python
-# 原始（每个 batch 重复收集）
-clip_params = []
-for mapping in self.layer_mappings.values():
-    clip_params.extend(mapping.parameters())
-torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
-
-# 修改后（__init__ 中预缓存）
-self._clip_params_cache = []
-for mapping in self.layer_mappings.values():
-    self._clip_params_cache.extend(mapping.parameters())
-# train_epoch 中调用 self._clip_grads()
+n_stab_samples = self.loss_fn.n_stab_samples
+l_stab_layer = 0.0
+for _ in range(n_stab_samples):
+    theta_noisy = theta_hat.detach().clone()
+    theta_noisy[start:end] = mapping.noisy_forward(self.loss_fn.sigma_noise)
+    y_hat_noisy = self.target_net.functional_forward(x, theta_noisy)
+    l_stab_layer += F.mse_loss(y_hat_noisy, y_hat.detach())
+l_stab_total += l_stab_layer / n_stab_samples
 ```
 
-**Review 预期**：避免重复计算。已符合。
+**Review 预期**：LWT 与 SLVT 的 L_stab 采样行为一致。已符合。
 
 ---
 
@@ -244,20 +281,11 @@ for mapping in self.layer_mappings.values():
 
 **修改项 2：删除实验性 generator 特殊处理分支（第三轮 review 修复）**
 
-原始代码包含 `kron_structured`、`kron_weight`、`pca`、`adaptive_dim`、`manifold_reg`、`superposition`、`tt_structured` 等 7 个 generator 类型的特殊参数处理分支（约 55 行），这些 generator 不存在于本 PR 中。修改后删除所有实验性分支。
+删除 `kron_structured`、`kron_weight`、`pca`、`adaptive_dim`、`manifold_reg`、`superposition`、`tt_structured` 等 7 个不存在 generator 的特殊参数处理分支（约 55 行）。
 
-**修改项 3：使用公共数据加载函数（第三轮 review 重构）**
+**修改项 3：使用公共数据加载函数**
 
-```python
-# 原始（内联 transform + DataLoader）
-transform = transforms.Compose([...])
-train_dataset = datasets.MNIST('./data', ...)
-train_loader = DataLoader(train_dataset, ...)
-
-# 修改后（复用公共函数）
-from mapping_network.data import get_mnist_loaders
-train_loader, test_loader = get_mnist_loaders(cfg['batch_size'], root='./data')
-```
+复用 `mapping_network.data.get_mnist_loaders`，消除内联 transform + DataLoader 构建。
 
 **Review 预期**：消除数据加载重复代码。已符合。
 
@@ -271,41 +299,15 @@ train_loader, test_loader = get_mnist_loaders(cfg['batch_size'], root='./data')
 
 **修改项 2：修复 w_seed fallback 魔数（第三轮 review 修复）**
 
-原始代码在旧 checkpoint fallback 中硬编码 `w_seed=12345`，与 generator 的 `_DEFAULT_W_SEED=0x4C4D4E54` 不一致，会导致 W_fixed 重建错误。
+删除硬编码 `w_seed=12345`，改为仅在 checkpoint 显式保存了 `w_seed` 时透传，否则让 generator 自行派生。
 
-修改后仅在 checkpoint 显式保存了 `w_seed` 时透传，否则让 generator 自行派生：
+**修改项 3：LWT 分支使用 assemble_params**
 
-```python
-# 原始
-gen_config = checkpoint.get('gen_config', {
-    'type': ..., 'latent_dim': ..., 'alpha': ...,
-    'w_seed': checkpoint.get('w_seed', 12345),  # 魔数！
-})
-
-# 修改后
-gen_config = checkpoint.get('gen_config')
-if gen_config is None:
-    gen_config = {'type': ..., 'latent_dim': ..., 'alpha': ...}
-    if 'w_seed' in checkpoint:
-        gen_config['w_seed'] = checkpoint['w_seed']
-    # 不传 w_seed 时 generator 用 _derive_seed 自动派生
-```
-
-**修改项 3：LWT 分支使用 assemble_params（第三轮 review 修复）**
-
-```python
-# 原始（手动 cat）
-theta_parts = [layer_mappings[name]() for name in group_order]
-theta_hat = torch.cat(theta_parts)
-
-# 修改后（通过 target_net.assemble_params）
-group_theta = {name: layer_mappings[name]() for name in group_order}
-theta_hat = target_net.assemble_params(group_theta)
-```
+通过 `target_net.assemble_params(group_theta)` 替代手动 `torch.cat`。
 
 **修改项 4：使用公共数据加载函数**
 
-同 train.py，复用 `get_mnist_test_loader`。
+复用 `get_mnist_test_loader`。
 
 **Review 预期**：不硬编码，使用统一接口。已符合。
 
@@ -315,9 +317,7 @@ theta_hat = target_net.assemble_params(group_theta)
 
 **修改项：重构为 BaselineTrainer(BaseTrainer)（第三轮 review 架构重构）**
 
-原始代码是 247 行的巨型 `main()` 函数，手动实现了日志、checkpoint、训练循环——这些逻辑在 SLVT/LWT trainer 中已经实现。
-
-修改后提取 `BaselineTrainer(BaseTrainer)`，复用基类的日志/checkpoint/训练循环逻辑，`main()` 仅保留 CLI 参数解析和 trainer 实例化。同时复用 `build_optimizer`/`build_scheduler` 工厂和公共数据加载函数。
+从 247 行的巨型 `main()` 函数重构为 `BaselineTrainer(BaseTrainer)` + 精简 CLI 入口，复用基类的日志/checkpoint/训练循环逻辑和公共数据加载函数。
 
 **Review 预期**：消除代码重复，统一架构。已符合。
 
@@ -331,18 +331,7 @@ theta_hat = target_net.assemble_params(group_theta)
 
 **修改项 2：添加 import torch（第三轮 review 阻塞性修复）**
 
-原始代码 `assemble_params` 方法使用了 `torch.Tensor` 类型注解和 `torch.cat`，但文件只 import 了 `torch.nn as nn`，没有 `import torch`，导致 `NameError`。
-
-```python
-# 原始
-from dataclasses import dataclass
-import torch.nn as nn
-
-# 修改后
-from dataclasses import dataclass
-import torch
-import torch.nn as nn
-```
+`assemble_params` 方法使用了 `torch.Tensor` 和 `torch.cat` 但未 import torch，导致 `NameError`。
 
 **Review 预期**：消除 NameError。已符合。
 
@@ -352,15 +341,7 @@ import torch.nn as nn
 
 **修改项：提取公共数据加载函数（第三轮 review 重构）**
 
-train.py、evaluate.py、train_baseline.py 三处重复了 MNIST transform + DataLoader 构建。提取为公共函数：
-
-```python
-def get_mnist_loaders(batch_size=64, root='./data', train=True, download=True):
-    """返回 (train_loader, test_loader)。"""
-
-def get_mnist_test_loader(batch_size=64, root='./data'):
-    """仅返回 test_loader（用于 evaluate 脚本）。"""
-```
+提取 `get_mnist_loaders()` 和 `get_mnist_test_loader()`，消除 train.py、evaluate.py、train_baseline.py 三处重复的 MNIST transform + DataLoader 构建。
 
 **Review 预期**：消除数据加载重复。已符合。
 
@@ -370,7 +351,7 @@ def get_mnist_test_loader(batch_size=64, root='./data'):
 
 **修改项：适配新 checkpoint 格式（第三轮 review 阻塞性修复）**
 
-- `load_light_state_dict` → `load_persistent_state_dict`（废弃接口名）
+- `load_light_state_dict` → `load_persistent_state_dict`
 - LWT 测试中 `w_seed_base + idx` → `config['layer_name'] = name`
 - LWT 重建使用 `target_net.assemble_params` 替代 `torch.cat`
 
@@ -382,15 +363,7 @@ def get_mnist_test_loader(batch_size=64, root='./data'):
 
 **修改项：checkpoint 字段断言更新（第三轮 review 修复）**
 
-```python
-# 原始
-assert 'generator_type' in ckpt
-
-# 修改后
-assert 'gen_config' in ckpt
-```
-
-checkpoint 现在使用 `gen_config` 字段而非 `generator_type`。
+`assert 'generator_type' in ckpt` → `assert 'gen_config' in ckpt`。
 
 **Review 预期**：测试断言与实际 checkpoint 格式一致。已符合。
 
@@ -398,7 +371,7 @@ checkpoint 现在使用 `gen_config` 字段而非 `generator_type`。
 
 ### 2.15 `tests/test_extensibility.py`（删除）
 
-该测试文件依赖不存在的 `multilayer_linear` generator 类型（对应文件 `multilayer.py` 未包含在本 PR 中），4 个用例全部失败。已删除。
+该测试文件依赖不存在的 `multilayer_linear` generator 类型，4 个用例全部失败。已删除。
 
 **Review 预期**：不包含无法通过的测试。已符合。
 
@@ -416,20 +389,21 @@ checkpoint 现在使用 `gen_config` 字段而非 `generator_type`。
 
 | 类别 | 数量 | 说明 |
 |------|:----:|------|
-| P0 精度修复 | 3 | modulation 退化、tanh 饱和、smooth_loss 精确计算 |
-| P1 阻塞性修复 | 6 | factory 导入失败、base.py NameError、废弃接口名、w_seed 魔数、test_extensibility 删除、uv.lock 清华镜像源 |
-| P1 架构改进 | 6 | checkpoint 接口统一、factory dict 驱动、evaluate 解耦、w_seed 内部管理、assemble_params、BaseTrainer 基类 |
+| P0 精度修复 | 4 | modulation 对齐论文 Eq.20、tanh 饱和、smooth_loss 精确计算、align_loss 对齐 Eq.30 |
+| P1 阻塞性修复 | 7 | factory 导入失败、base.py NameError、废弃接口名、w_seed 魔数、test_extensibility 删除、uv.lock 清华镜像源、seed 哈希稳定性 |
+| P1 架构改进 | 7 | checkpoint 接口统一、factory 装饰器注册、evaluate 解耦、w_seed 内部管理、assemble_params、BaseTrainer 基类、forward docstring 中性化 |
 | P1 工程质量 | 4 | 梯度裁剪、encoding='utf-8'、梯度裁剪参数缓存、公共数据加载 |
 | 配置补全 | 1 | cnn1_3conv_lwt.yaml |
-| 非阻塞观察 | 1 | align_loss 工程化扩展说明（已记录偏离原因） |
+| 建议修 | 2 | LWT n_stab_samples 复用、factory 装饰器注册机制 |
 
 **所有修改均符合 review 的最终预期。** 核心改进点：
 
-1. 修复了 4 个阻塞性缺陷：包可正常导入，全部 43 个测试通过
-2. 消除了硬编码和跨模块耦合（w_seed 内部管理、factory dict 驱动、persistent_state_dict 统一接口）
-3. 修复了影响精度的核心问题（modulation 退化、tanh 饱和、smooth_loss 精确计算）
-4. checkpoint 体积从 GB 级降至 KB 级（大 buffer 由 w_seed 重建）
-5. 提取 BaseTrainer 基类，消除 SLVT/LWT/Baseline 三处 60%+ 的代码重复
-6. 提取公共数据加载函数，消除三处重复的 MNIST DataLoader 构建
+1. modulation 公式严格对齐论文 Eq. 20（`α * ||z||²`），不引入额外随机投影路径
+2. seed 派生使用 `hashlib.md5`，跨进程/跨机器确定性，checkpoint 可靠重建
+3. 修复了全部阻塞性缺陷：包可正常导入，全部 43 个测试通过
+4. 消除了硬编码和跨模块耦合（w_seed 内部管理、装饰器注册、persistent_state_dict 统一接口）
+5. checkpoint 体积从 GB 级降至 KB 级（大 buffer 由 w_seed 重建）
+6. 提取 BaseTrainer 基类，消除 SLVT/LWT/Baseline 三处 60%+ 的代码重复
+7. LWT 的 L_stab 复用 n_stab_samples，与 SLVT 行为一致
 
 测试结果：`43 passed, 0 failed`（`.venv\Scripts\python.exe -m pytest tests/ -v`，Python 3.13.6, PyTorch 2.11.0+cu128）
