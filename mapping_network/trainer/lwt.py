@@ -120,11 +120,14 @@ class LWTTrainer(BaseTrainer):
 
         Each term is computed independently per layer and aggregated.
         Uses functional_forward for all forward passes (no .data.copy_()).
+
+        L_stab 采样 n_stab_samples 次降低方差，与 SLVT 的 MappingLoss 行为一致。
         """
         l_stab_total = 0.0
         l_smooth_total = 0.0
         l_align_total = 0.0
         offsets = self._compute_offsets()
+        n_stab_samples = self.loss_fn.n_stab_samples
 
         for group_name, mapping in self.layer_mappings.items():
             start, end = offsets[group_name]
@@ -135,10 +138,14 @@ class LWTTrainer(BaseTrainer):
 
             # L_stab^(l): 只扰动本层 z，替换到完整 theta 的对应切片。
             # theta_hat 必须 detach，避免未扰动层的梯度泄漏到其他层。
-            theta_noisy = theta_hat.detach().clone()
-            theta_noisy[start:end] = mapping.noisy_forward(self.loss_fn.sigma_noise)
-            y_hat_noisy = self.target_net.functional_forward(x, theta_noisy)
-            l_stab_total = l_stab_total + F.mse_loss(y_hat_noisy, y_hat.detach())
+            # 多次采样降低方差，与 SLVT 的 MappingLoss.n_stab_samples 一致。
+            l_stab_layer = 0.0
+            for _ in range(n_stab_samples):
+                theta_noisy = theta_hat.detach().clone()
+                theta_noisy[start:end] = mapping.noisy_forward(self.loss_fn.sigma_noise)
+                y_hat_noisy = self.target_net.functional_forward(x, theta_noisy)
+                l_stab_layer = l_stab_layer + F.mse_loss(y_hat_noisy, y_hat.detach())
+            l_stab_total = l_stab_total + l_stab_layer / n_stab_samples
 
         # Weighted sum with sigmoid-gated lambdas
         l_st = torch.sigmoid(self.loss_fn.lambda_st)
