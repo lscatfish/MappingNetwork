@@ -54,7 +54,11 @@ uv sync
 
 ### 2.3 参数生成网络与 LRD
 
-- **参数生成网络（ParameterGenerator）**：只负责把可学习向量 `z` 变成目标网络的参数向量 `theta_hat`。目前实现的是 `LinearMappingNetwork`（固定正交矩阵 + 可学习 `z`）。
+- **参数生成网络（ParameterGenerator）**：只负责把可学习向量 `z` 变成目标网络的参数向量 `theta_hat`。内置三种生成器，通过 `type` 字段选择：
+  - `linear`（默认，`LinearMappingNetwork`）：固定正交矩阵 `W_fixed` + 可学习 `z`，`theta = tanh(W_fixed @ z + α·||z||² + b_fixed)`，参数效率最高。
+  - `multilayer_linear`（`MultiLayerLinearMappingNetwork`）：MLP 风格，`z -> Linear -> ReLU -> ... -> Linear -> tanh`，表达能力更强但可训练参数更多。
+  - `cnn`（`CNNMappingNetwork`）：卷积风格，把 `z` 投影到小特征图后卷积再展平，适合捕捉空间结构。
+- **扩展自己的生成器**：新建文件继承 `ParameterGenerator`，加 `@register_generator('名字')` 装饰器，并在 `mapping_network/generators/__init__.py` 里 import 即可被工厂识别，无需改 trainer / factory。
 - **LRD（Low-Rank Decomposition，低秩分解）**：当目标网络太大时，把全连接层的权重拆成 `U @ V.T` 两个小矩阵，显著减少生成网络需要输出的参数数量，避免显存爆炸。默认对超过 20 万参数的网络自动开启。
 
 ---
@@ -107,7 +111,7 @@ uv run python3 -m mapping_network.scripts.train_baseline --target cnn2 --epochs 
 | `--batch-size` | 否 | 64 | 每批用多少张图 |
 | `--lr` | 否 | 0.001 | 学习率 |
 | `--seed` | 否 | 42 | 随机种子，保证可复现 |
-| `--device` | 否 | `cuda` | 用 GPU 还是 CPU，可写 `cuda` 或 `cpu` |
+| `--device` | 否 | 自动 | CUDA 可用时用 `cuda`，否则 `cpu`；可显式指定 |
 
 > *如果不使用 `--config`，则 `--target` 必填。命令行参数优先级高于配置文件。*
 
@@ -128,6 +132,7 @@ configs/cnn1_baseline.yaml       # CNN1 + 基线训练
 configs/cnn1_lwt.yaml            # CNN1 + LWT
 configs/cnn1_slvt.yaml           # CNN1 + SLVT
 configs/cnn1_3conv_baseline.yaml # CNN1_3Conv + 基线训练
+configs/cnn1_3conv_lwt.yaml      # CNN1_3Conv + LWT
 configs/cnn1_3conv_slvt.yaml     # CNN1_3Conv + SLVT
 configs/cnn2_baseline.yaml       # CNN2 + 基线训练
 configs/cnn2_lwt.yaml            # CNN2 + LWT
@@ -193,9 +198,14 @@ save_interval: 1              # 每隔多少 epoch 保存一次中间模型，1 
 ### 4.2 SLVT 特有参数
 
 ```yaml
-generator_type: linear        # 参数生成网络类型，目前只有 linear
+generator_type: linear        # 参数生成网络类型：linear / multilayer_linear / cnn
 latent_dim: 2048              # 隐向量 z 的长度，越短参数越少
 ```
+
+`generator_type` 可选：
+- `linear`（默认）：固定正交矩阵，可训练参数 = `latent_dim`。
+- `multilayer_linear`：MLP 风格，额外接受 `hidden_dim`（默认 64）、`num_hidden`（默认 1）。
+- `cnn`：卷积风格，额外接受 `feature_size`（默认 4）、`channels`（默认 `(16, 8)`）。
 
 - `latent_dim` 越大，表达能力越强，但 `L_smooth` 计算越慢、越占显存。
 - 如果显存不够，可以改成 `512` 或 `256`。
@@ -228,6 +238,7 @@ layer_generators:
 - `layer_generators` 的键名（`conv1`、`conv2`、`fc1`、`fc2`）必须和目标网络参数名前缀一致。
 - 对 CNN1_3Conv，需要写成 `conv1`、`conv2`、`conv3`、`fc1`、`fc2`。
 - 每层的 `latent_dim` 可以不同；`alpha` 可以省略，默认用全局 `alpha`。
+- 每层的 `type` 也可以不同，可选值同 SLVT 的 `generator_type`（`linear` / `multilayer_linear` / `cnn`）；非 `linear` 类型需补充对应参数（如 `hidden_dim`、`channels`）。
 
 ### 4.4 LRD（低秩分解）配置
 
@@ -316,9 +327,9 @@ model.load_state_dict(ckpt['state_dict'])
 
 ### 6.1 默认用 GPU 还是 CPU？
 
-- `train.py` 和 `train_baseline.py` 默认用 `cuda`。
-- 如果电脑没有 NVIDIA 显卡或 CUDA 不可用，脚本会报错，需要手动加 `--device cpu`。
-- 测试默认也优先使用 GPU。
+- `train.py` 和 `train_baseline.py` 默认自动检测：CUDA 可用时用 `cuda`，否则用 `cpu`。
+- 也可以用 `--device cpu` / `--device cuda` 显式指定。
+- 测试通过 `conftest.py` 的 `device` fixture 控制，默认同样自动检测；可用 `--device cpu` / `--device cuda` 覆盖。
 
 ### 6.2 训练时显存溢出（OOM）怎么办？
 

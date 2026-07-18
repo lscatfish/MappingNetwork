@@ -1,12 +1,14 @@
+# 触发所有 generator 子类的装饰器执行，填充 GENERATOR_REGISTRY
+from mapping_network.generators import base as _generator_base
+from mapping_network.generators import (
+    cnn,  # noqa: F401
+    linear,  # noqa: F401
+    multilayer_linear,  # noqa: F401
+)
 from mapping_network.target_nets.cnn1 import CNN1
 from mapping_network.target_nets.cnn1_3conv import CNN1_3Conv
 from mapping_network.target_nets.cnn2 import CNN2
 from mapping_network.target_nets.lrd_config import LRDConfig
-
-# 触发所有 generator 子类的装饰器执行，填充 GENERATOR_REGISTRY
-from mapping_network.generators import base as _generator_base
-from mapping_network.generators import linear  # noqa: F401
-
 
 TARGET_NET_MAP = {
     'cnn1': CNN1,

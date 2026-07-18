@@ -43,10 +43,10 @@ def load_cfg(path):
 def make_one_batch_loader(device):
     x = torch.randn(1, 1, 28, 28, device=device)
     y = torch.tensor([0], device=device)
-    return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=1)
+    return DataLoader(TensorDataset(x, y), batch_size=1)
 
 
-def test_lwt_layer_lrd_config_merge():
+def test_lwt_layer_lrd_config_merge(device):
     """Verify LWT per-layer lrd_rank/lrd_enabled merge into global LRDConfig."""
     cfg = load_cfg('configs/cnn1_lwt.yaml')
     assert cfg['training_strategy'] == 'lwt'
@@ -59,7 +59,7 @@ def test_lwt_layer_lrd_config_merge():
     # No layer_enabled in cnn1_lwt.yaml; should be empty dict
     assert lrd_config.get('layer_enabled', {}) == {}
 
-    target_net = build_target_net(cfg['target_net'], lrd_config)
+    target_net = build_target_net(cfg['target_net'], lrd_config).to(device)
     slices = target_net.get_param_slices()
     fc1_slices = [
         s

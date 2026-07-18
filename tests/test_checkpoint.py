@@ -15,7 +15,7 @@ from mapping_network.trainer.slvt import SLVTTrainer
 def make_one_batch_loader(device):
     x = torch.randn(1, 1, 28, 28, device=device)
     y = torch.tensor([0], device=device)
-    return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=1)
+    return DataLoader(TensorDataset(x, y), batch_size=1)
 
 
 def test_slvt_checkpoint_reconstruction(device):

@@ -49,12 +49,15 @@
 │   │   ├── cnn1_3conv.py      # CNN1 三卷积实验版
 │   │   ├── cnn2.py            # CNN2
 │   │   └── lrd_config.py      # LRDConfig 配置 dataclass
-│   ├── generators/            # 参数生成网络
-│   │   ├── base.py            # ParameterGenerator 抽象基类
-│   │   └── linear.py          # LinearMappingNetwork
+│   ├── generators/            # 参数生成网络（@register_generator 注册）
+│   │   ├── base.py            # ParameterGenerator 抽象基类 + GENERATOR_REGISTRY
+│   │   ├── linear.py          # LinearMappingNetwork（'linear'）
+│   │   ├── multilayer_linear.py  # MultiLayerLinearMappingNetwork（'multilayer_linear'）
+│   │   └── cnn.py             # CNNMappingNetwork（'cnn'）
 │   ├── mapping/               # Mapping Network 核心
 │   │   └── loss.py            # MappingLoss：任务/稳定/光滑/对齐损失
 │   ├── trainer/               # 训练器
+│   │   ├── base.py            # BaseTrainer 基类（训练循环/checkpoint/日志）
 │   │   ├── slvt.py            # SLVT 训练器
 │   │   ├── lwt.py             # LWT 训练器
 │   │   └── optim_utils.py     # 优化器/调度器工厂
@@ -69,6 +72,7 @@
 │   ├── cnn1_lwt.yaml
 │   ├── cnn1_3conv_baseline.yaml
 │   ├── cnn1_3conv_slvt.yaml
+│   ├── cnn1_3conv_lwt.yaml
 │   ├── cnn2_baseline.yaml
 │   ├── cnn2_slvt.yaml
 │   └── cnn2_lwt.yaml
@@ -76,6 +80,7 @@
 │   ├── conftest.py            # 全局 device fixture
 │   ├── test_checkpoint.py     # checkpoint 重建测试
 │   ├── test_configs.py        # 全配置冒烟测试
+│   ├── test_extensibility.py  # 生成器可扩展性端到端验收
 │   ├── test_factory.py        # 工厂函数测试
 │   ├── test_generators.py     # 参数生成网络测试
 │   ├── test_loss.py           # MappingLoss 测试
@@ -107,16 +112,18 @@
 
 ### 4.2 参数生成网络（ParameterGenerator）
 
-- 抽象基类位于 `mapping_network.generators.base.ParameterGenerator`。
+- 抽象基类位于 `mapping_network.generators.base.ParameterGenerator`；子类用 `@register_generator('name')` 装饰器自动注册到 `GENERATOR_REGISTRY`，`factory.build_generator` 据 `config['type']` 查找。
 - 子类必须实现：
   - `forward()`：返回 `theta_hat [P]`。
   - `noisy_forward(sigma)`：返回加噪后的 `theta_noisy [P]`，用于 `L_stab`。
   - `smooth_loss()`：返回 `L_smooth`。
   - `align_loss()`：返回 `L_align`。
-- 当前实现：`LinearMappingNetwork`（`mapping_network.generators.linear`）。
-  - 固定权重 `W_fixed`（正交初始化）与偏置 `b_fixed` 注册为 buffer，`requires_grad=False`。
-  - 唯一可训练参数是 `z`（`nn.Parameter`）。
-  - 前向公式：`theta_hat = tanh(W_fixed @ z + alpha * ||z||² + b_fixed)`。
+- 可选重写 `persistent_state_dict()` / `load_persistent_state_dict()` / `_rebuild_buffers()` 控制大 buffer 的 checkpoint 持久化与重建。
+- 当前注册的实现：
+  - `linear`（`LinearMappingNetwork`）：固定权重 `W_fixed`（正交初始化）与偏置 `b_fixed` 注册为 buffer，`requires_grad=False`；唯一可训练参数是 `z`；前向 `theta_hat = tanh(W_fixed @ z + alpha * ||z||² + b_fixed)`。
+  - `multilayer_linear`（`MultiLayerLinearMappingNetwork`）：MLP 风格，`z -> Linear -> ReLU -> ... -> Linear -> tanh`，额外参数 `hidden_dim`、`num_hidden`。
+  - `cnn`（`CNNMappingNetwork`）：卷积风格，`z` 投影到小特征图后卷积再展平，额外参数 `feature_size`、`channels`。
+- 新增生成器只需：新建文件继承 `ParameterGenerator` + `@register_generator('name')`，在 `mapping_network/generators/__init__.py` import，无需改 trainer / factory / evaluate。
 
 ### 4.3 MappingLoss
 
@@ -199,13 +206,14 @@ uv run python3 -m pytest tests/ -v --device cpu
 
 # 单独运行某个测试文件
 uv run python3 -m pytest tests/test_target_nets.py -v
-uv run python3 -m pytest tests/test_mapping_net.py -v
+uv run python3 -m pytest tests/test_generators.py -v
 uv run python3 -m pytest tests/test_loss.py -v
 uv run python3 -m pytest tests/test_slvt.py -v
 uv run python3 -m pytest tests/test_lwt.py -v
+uv run python3 -m pytest tests/test_extensibility.py -v
 ```
 
-当前测试集共 35 个用例，覆盖：
+当前测试集共 55 个用例，覆盖：
 
 - 各目标网络参数量与前向输出。
 - `functional_forward` 输出与模块前向一致且梯度可回传。
@@ -216,6 +224,7 @@ uv run python3 -m pytest tests/test_lwt.py -v
 - LWT 稳定性损失的梯度不跨层泄漏。
 - checkpoint 保存后能够重建并复现前向输出。
 - 所有 YAML 配置均可完成一个 batch 的前向 + 反向。
+- 非 `linear` 生成器（`multilayer_linear`）端到端跑通 factory -> trainer -> checkpoint -> evaluate，验证可扩展性。
 
 ---
 
@@ -275,7 +284,7 @@ checkpoint_dir: str
 save_interval: int                  # 每隔多少 epoch 保存中间模型，1 表示每轮都存
 
 # SLVT 特有
-generator_type: linear              # 目前仅支持 linear
+generator_type: linear              # linear / multilayer_linear / cnn
 latent_dim: int
 
 # LWT 特有
