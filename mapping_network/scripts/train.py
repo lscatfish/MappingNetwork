@@ -11,9 +11,8 @@ import os
 
 import torch
 import yaml
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
 
+from mapping_network.data import get_mnist_loaders
 from mapping_network.factory import build_generator, build_target_net
 from mapping_network.mapping.loss import MappingLoss
 from mapping_network.trainer.lwt import LWTTrainer
@@ -26,7 +25,7 @@ def set_seed(seed: int):
 
 
 def load_config(path):
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -81,16 +80,7 @@ def main():
     )
 
     # Data
-    transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-        ]
-    )
-    train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
-    test_dataset = datasets.MNIST('./data', train=False, transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=cfg['batch_size'])
+    train_loader, test_loader = get_mnist_loaders(cfg['batch_size'], root='./data')
 
     lrd_config = cfg.get('lrd', {})
 
@@ -105,6 +95,7 @@ def main():
         lambda_st_init=cfg.get('lambda_st_init', 0.1),
         lambda_sm_init=cfg.get('lambda_sm_init', 0.1),
         lambda_al_init=cfg.get('lambda_al_init', 0.1),
+        n_stab_samples=cfg.get('n_stab_samples', 5),
     ).to(device)
 
     experiment_name = make_experiment_name(cfg)
@@ -113,16 +104,24 @@ def main():
     append_log = args.resume is not None
 
     if cfg['training_strategy'] == 'slvt':
-        mapping = build_generator(
-            cfg.get('generator_type', 'linear'),
-            target_net.get_total_params(),
-            cfg['latent_dim'],
-            cfg.get('alpha', 0.01),
-            device,
-        )
+        generator_type = cfg.get('generator_type', 'linear')
+
+        # 构建 generator_config dict —— 只透传 generator 需要的配置，
+        # factory 负责注入 target_total_params 和 device，不再硬编码 w_seed
+        gen_config = {
+            'type': generator_type,
+            'latent_dim': cfg['latent_dim'],
+            'alpha': cfg.get('alpha', 0.01),
+        }
+        # 可选：如果用户显式指定了 w_seed，透传给 generator（由 generator 内部管理）
+        if 'w_seed' in cfg:
+            gen_config['w_seed'] = cfg['w_seed']
+
+        mapping = build_generator(gen_config, target_net.get_total_params(), device=device)
+        print(f'Generator: {generator_type}')
         print(f'Latent dim: {cfg["latent_dim"]}')
         print(f'Trainable: {mapping.trainable_params():,}')
-        print(f'Fixed mapping weights: {mapping.W_fixed.numel():,}')
+        print(f'Fixed mapping weights: {mapping.fixed_params_count():,}')
 
         trainer = SLVTTrainer(
             mapping,
@@ -141,11 +140,12 @@ def main():
             checkpoint_metadata={
                 'target_net': cfg['target_net'],
                 'training_strategy': 'slvt',
-                'generator_type': cfg.get('generator_type', 'linear'),
+                'gen_config': gen_config,
                 'latent_dim': cfg['latent_dim'],
                 'alpha': cfg.get('alpha', 0.01),
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
                 'lrd_config': cfg.get('lrd'),
+                'warmup_epochs': cfg.get('warmup_epochs', max(1, cfg['epochs'] // 10)),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),
@@ -172,6 +172,7 @@ def main():
                 'training_strategy': 'lwt',
                 'lrd_config': lrd_config,
                 'sigma_noise': cfg.get('sigma_noise', 0.0001),
+                'warmup_epochs': cfg.get('warmup_epochs', max(1, cfg['epochs'] // 10)),
             },
             save_interval=cfg.get('save_interval', 1),
             optimizer_name=cfg.get('optimizer', 'adamw'),

@@ -21,7 +21,7 @@ def make_one_batch_loader(device):
 def test_slvt_checkpoint_reconstruction(device):
     """SLVT checkpoint 保存后能重建并复现相同 logits。"""
     target_net = build_target_net('cnn2').to(device)
-    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device)
+    mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device, w_seed=12345)
     loss_fn = MappingLoss().to(device)
     loader = make_one_batch_loader(device)
 
@@ -44,6 +44,7 @@ def test_slvt_checkpoint_reconstruction(device):
             'alpha': 0.01,
             'sigma_noise': 0.01,
             'lrd_config': None,
+            'w_seed': 12345,
         },
         save_interval=0,
     )
@@ -63,13 +64,16 @@ def test_slvt_checkpoint_reconstruction(device):
     # 重建
     target_rebuilt = build_target_net(ckpt['target_net'], ckpt.get('lrd_config')).to(device)
     mapping_rebuilt = build_generator(
-        ckpt.get('generator_type', 'linear'),
-        target_rebuilt.get_total_params(),
-        ckpt['latent_dim'],
-        ckpt.get('alpha', 0.01),
-        device,
+        {
+            'type': ckpt.get('generator_type', 'linear'),
+            'latent_dim': ckpt['latent_dim'],
+            'alpha': ckpt.get('alpha', 0.01),
+            'w_seed': ckpt.get('w_seed', 12345),
+        },
+        target_total_params=target_rebuilt.get_total_params(),
+        device=device,
     )
-    mapping_rebuilt.load_state_dict(ckpt['state_dict'])
+    mapping_rebuilt.load_persistent_state_dict(ckpt['state_dict'])
     mapping_rebuilt.eval()
     target_rebuilt.eval()
 
@@ -127,17 +131,14 @@ def test_lwt_checkpoint_reconstruction(device):
     layer_mappings = torch.nn.ModuleDict()
     for name, gen_cfg in ckpt['layer_generator_configs'].items():
         group_size = target_rebuilt.get_group_param_size(name)
-        mapping = build_generator(
-            gen_cfg.get('type', 'linear'),
-            group_size,
-            gen_cfg['latent_dim'],
-            gen_cfg.get('alpha', 0.01),
-            device,
-        )
-        mapping.load_state_dict(ckpt['state_dict'][name])
+        config = dict(gen_cfg)
+        config['layer_name'] = name
+        mapping = build_generator(config, target_total_params=group_size, device=device)
+        mapping.load_persistent_state_dict(ckpt['state_dict'][name])
         layer_mappings[name] = mapping
 
     group_order = ckpt.get('layer_group_order', list(layer_mappings.keys()))
-    theta_rebuilt = torch.cat([layer_mappings[name]() for name in group_order])
+    group_theta = {name: layer_mappings[name]() for name in group_order}
+    theta_rebuilt = target_rebuilt.assemble_params(group_theta)
     logits_rebuilt = target_rebuilt.functional_forward(x, theta_rebuilt)
     assert torch.allclose(logits_ref, logits_rebuilt, atol=1e-6)

@@ -31,3 +31,7 @@ checkpoints/
 .pytest_cache/
 .ruff_cache/
 .opencode/
+
+# Logs / verification outputs
+train_verify.txt
+mapping_networks_full.txt
