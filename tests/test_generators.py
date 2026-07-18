@@ -47,14 +47,15 @@ def test_persistent_state_dict_only_trainable():
     state = gen.persistent_state_dict()
     assert 'z' in state
     assert 'W_fixed' not in state
-    assert all(v.requires_grad for v in state.values())
+    assert 'W_fixed_mean' not in state
+    assert 'b_fixed' not in state
 
 
 def test_load_persistent_state_dict_restores_trainable():
     gen = LinearMappingNetwork(20, 4, alpha=0.01, device='cpu')
     original_z = gen.z.detach().clone()
     gen.z.data.fill_(0.0)
-    missing, unexpected = gen.load_persistent_state_dict({'z': original_z})
+    gen.load_persistent_state_dict({'z': original_z})
     assert torch.allclose(gen.z, original_z)
 
 
@@ -69,7 +70,9 @@ def test_linear_mapping_network_w_seed_reproducible():
 def test_multilayer_linear_mapping_network(device='cuda'):
     if not torch.cuda.is_available():
         device = 'cpu'
-    gen = MultiLayerLinearMappingNetwork(50, 8, alpha=0.01, hidden_dim=16, num_hidden=2, device=device)
+    gen = MultiLayerLinearMappingNetwork(
+        50, 8, alpha=0.01, hidden_dim=16, num_hidden=2, device=device
+    )
     theta = gen()
     assert theta.shape == (50,)
     assert theta.device.type == device

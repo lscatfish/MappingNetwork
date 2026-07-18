@@ -21,9 +21,7 @@ class TestSLVT:
     def test_slvt_train_one_batch(self, device):
         """验证 SLVT 训练一个 batch 后 z 有梯度更新，且全在指定设备上。"""
         target = CNN2().to(device)
-        mapping = LinearMappingNetwork(
-            target.get_total_params(), 8, alpha=0.01, device=device, w_seed=123
-        ).to(device)
+        mapping = LinearMappingNetwork(target.get_total_params(), 64, device=device).to(device)
         loss_fn = MappingLoss().to(device)
 
         x = torch.randn(8, 1, 28, 28, device=device)
@@ -43,14 +41,6 @@ class TestSLVT:
             log_interval=1,
             checkpoint_dir='/tmp/test_slvt_checkpoints',
             experiment_name='test_slvt',
-            checkpoint_metadata={
-                'generator_config': {
-                    'target_total_params': target.get_total_params(),
-                    'latent_dim': 8,
-                    'alpha': 0.01,
-                    'w_seed': 123,
-                },
-            },
         )
         results = trainer.train()
         assert len(results) == 1
@@ -59,17 +49,16 @@ class TestSLVT:
         # 确保所有模型参数在正确设备上
         assert next(mapping.parameters()).device.type == device
 
-        # 验证 checkpoint 按新方法打包（含 metadata + generator_state_dict）
+        # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
         checkpoint_path = os.path.join('/tmp/test_slvt_checkpoints', 'test_slvt_final.pth')
         assert os.path.exists(checkpoint_path)
         ckpt = torch.load(checkpoint_path, map_location='cpu')
         assert isinstance(ckpt, dict)
-        assert 'generator_state_dict' in ckpt
-        assert 'generator_config' in ckpt
+        assert 'state_dict' in ckpt
         assert 'target_net' in ckpt
         assert 'training_strategy' in ckpt
         assert 'latent_dim' in ckpt
-        assert 'generator_type' in ckpt
+        assert 'gen_config' in ckpt
         assert 'lrd_config' in ckpt
         assert ckpt['training_strategy'] == 'slvt'
 

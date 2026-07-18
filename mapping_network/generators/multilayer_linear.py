@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from .base import ParameterGenerator
+from .base import ParameterGenerator, register_generator
 
 
+@register_generator('multilayer_linear')
 class MultiLayerLinearMappingNetwork(ParameterGenerator):
     """MLP-style generator: z -> Linear -> ReLU -> ... -> Linear -> theta_hat."""
 
@@ -51,7 +51,7 @@ class MultiLayerLinearMappingNetwork(ParameterGenerator):
             end = min(start + chunk_size, P)
             mask = torch.zeros(P, device=theta.device, dtype=theta.dtype)
             mask[start:end] = 1.0
-            grads, = torch.autograd.grad(
+            (grads,) = torch.autograd.grad(
                 theta, self.z, grad_outputs=mask, retain_graph=True, create_graph=True
             )
             total = total + (grads * grads).sum()

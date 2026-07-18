@@ -109,10 +109,6 @@ def test_target_net_assemble_params():
     net = build_target_net('cnn2')
     group_names = net.get_group_names()
     group_sizes = [net.get_group_param_size(name) for name in group_names]
-    outputs = [torch.randn(size) for size in group_sizes]
+    outputs = {name: torch.randn(size) for name, size in zip(group_names, group_sizes)}
     theta = net.assemble_params(outputs)
     assert theta.shape == (sum(group_sizes),)
-
-    # dict input
-    theta2 = net.assemble_params({name: out for name, out in zip(group_names, outputs)})
-    assert torch.allclose(theta, theta2)

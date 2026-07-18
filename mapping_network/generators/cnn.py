@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import ParameterGenerator
+from .base import ParameterGenerator, register_generator
 
 
+@register_generator('cnn')
 class CNNMappingNetwork(ParameterGenerator):
     """Conv2d-based generator: project z to a small feature map, convolve, flatten, project."""
 
@@ -37,7 +38,9 @@ class CNNMappingNetwork(ParameterGenerator):
             in_ch = out_ch
         self.conv_net = nn.Sequential(*conv_layers)
 
-        self.final = nn.Linear(in_ch * feature_size * feature_size, target_total_params, device=device)
+        self.final = nn.Linear(
+            in_ch * feature_size * feature_size, target_total_params, device=device
+        )
 
     def _features(self, z: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.fc(z))
@@ -63,7 +66,7 @@ class CNNMappingNetwork(ParameterGenerator):
             end = min(start + chunk_size, P)
             mask = torch.zeros(P, device=theta.device, dtype=theta.dtype)
             mask[start:end] = 1.0
-            grads, = torch.autograd.grad(
+            (grads,) = torch.autograd.grad(
                 theta, self.z, grad_outputs=mask, retain_graph=True, create_graph=True
             )
             total = total + (grads * grads).sum()

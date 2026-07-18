@@ -154,13 +154,44 @@ class TargetNet(nn.Module):
                 names.append(name)
         return names
 
-    def assemble_params(self, group_outputs: list[torch.Tensor] | dict[str, torch.Tensor]) -> torch.Tensor:
-        """按 group_order 拼接每层的输出得到完整 theta_hat。"""
-        if isinstance(group_outputs, dict):
-            outputs = [group_outputs[name] for name in self.get_group_names()]
-        else:
-            outputs = group_outputs
-        return torch.cat(outputs)
+    def assemble_params(self, group_theta: dict[str, torch.Tensor]) -> torch.Tensor:
+        """将各层组生成的参数按 _param_slices 顺序拼接成完整 theta_hat。
+
+        Args:
+            group_theta: 字典 {group_name: tensor}，每个 tensor 是一维张量，
+                长度为该 group 的压缩后参数数。
+
+        Returns:
+            完整 theta_hat [P_total]。
+        """
+        parts = []
+        offset_in_group = {name: 0 for name in group_theta}
+
+        for s in self._param_slices:
+            group_name = s.name.split('.')[0] if s.kind == 'full' else s.weight_name.split('.')[0]
+            if group_name not in group_theta:
+                raise ValueError(f'Missing theta for group: {group_name}')
+
+            group_t = group_theta[group_name]
+            if s.kind == 'full':
+                size = s.end - s.start
+                part = group_t[offset_in_group[group_name] : offset_in_group[group_name] + size]
+                offset_in_group[group_name] += size
+                parts.append(part)
+            elif s.kind == 'lrd':
+                size = s.b_end - s.u_start
+                part = group_t[offset_in_group[group_name] : offset_in_group[group_name] + size]
+                offset_in_group[group_name] += size
+                parts.append(part)
+
+        for name, t in group_theta.items():
+            consumed = offset_in_group[name]
+            if consumed != t.numel():
+                raise ValueError(
+                    f'Group {name}: expected {t.numel()} params, but used {consumed}'
+                )
+
+        return torch.cat(parts)
 
     def functional_forward(self, x, theta_hat):
         params = {}
