@@ -9,18 +9,15 @@ Usage:
 """
 
 import argparse
-import json
 import os
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import yaml
-from torch.utils.data import DataLoader
 
+from mapping_network.data import get_mnist_loaders
 from mapping_network.factory import TARGET_NET_MAP
 from mapping_network.trainer.base import BaseTrainer
-from mapping_network.data import get_mnist_loaders
 
 
 class BaselineTrainer(BaseTrainer):
@@ -75,9 +72,7 @@ class BaselineTrainer(BaseTrainer):
         correct = 0
         total = 0
 
-        pbar = __import__('tqdm').tqdm(
-            self.train_loader, desc=f'Epoch {epoch}/{self.epochs}'
-        )
+        pbar = __import__('tqdm').tqdm(self.train_loader, desc=f'Epoch {epoch}/{self.epochs}')
         for batch_idx, (x, y) in enumerate(pbar):
             x, y = x.to(self.device), y.to(self.device)
             self.optimizer.zero_grad()
@@ -92,7 +87,9 @@ class BaselineTrainer(BaseTrainer):
             correct += pred.eq(y).sum().item()
 
             if batch_idx % self.log_interval == 0:
-                pbar.set_postfix({'loss': f'{loss.item():.4f}', 'acc': f'{100.0 * correct / total:.2f}%'})
+                pbar.set_postfix(
+                    {'loss': f'{loss.item():.4f}', 'acc': f'{100.0 * correct / total:.2f}%'}
+                )
 
         return total_loss / len(self.train_loader), 100.0 * correct / total
 
@@ -157,14 +154,18 @@ def main():
     batch_size = args.batch_size if args.batch_size is not None else cfg.get('batch_size', 64)
     lr = args.lr if args.lr is not None else cfg.get('lr', 0.001)
     seed = args.seed if args.seed is not None else cfg.get('seed', 42)
-    device = args.device if args.device is not None else cfg.get('device', 'cuda')
+    device = (
+        args.device
+        if args.device is not None
+        else cfg.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+    )
     checkpoint_dir = (
-        args.checkpoint_dir if args.checkpoint_dir is not None
+        args.checkpoint_dir
+        if args.checkpoint_dir is not None
         else cfg.get('checkpoint_dir', 'checkpoints')
     )
     save_interval = (
-        args.save_interval if args.save_interval is not None
-        else cfg.get('save_interval', 1)
+        args.save_interval if args.save_interval is not None else cfg.get('save_interval', 1)
     )
 
     if target is None:
@@ -173,7 +174,6 @@ def main():
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
 
     experiment_name = f'{target}_baseline'
     checkpoint_dir = os.path.join(checkpoint_dir, experiment_name)
