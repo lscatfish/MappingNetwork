@@ -42,18 +42,16 @@ class TestMappingLoss:
         assert mapping.z.grad.device.type == device
 
 
-def test_mapping_loss_lambda_inits():
+def test_mapping_loss_lambda_inits(device):
     import pytest
 
-    loss_fn = MappingLoss(lambda_st_init=0.01, lambda_sm_init=0.02, lambda_al_init=0.03)
+    loss_fn = MappingLoss(lambda_st_init=0.01, lambda_sm_init=0.02, lambda_al_init=0.03).to(device)
     assert loss_fn.lambda_st.item() == pytest.approx(0.01, abs=1e-6)
     assert loss_fn.lambda_sm.item() == pytest.approx(0.02, abs=1e-6)
     assert loss_fn.lambda_al.item() == pytest.approx(0.03, abs=1e-6)
 
 
-def test_mapping_loss_forward_lrd(device='cuda'):
-    if not torch.cuda.is_available():
-        device = 'cpu'
+def test_mapping_loss_forward_lrd(device):
     target_net = CNN2(lrd_config={'enabled': True, 'default_rank': 10}).to(device)
     mapping = LinearMappingNetwork(target_net.get_total_params(), 64, device=device)
     loss_fn = MappingLoss(sigma_noise=0.01).to(device)

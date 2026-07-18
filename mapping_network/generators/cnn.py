@@ -17,11 +17,13 @@ class CNNMappingNetwork(ParameterGenerator):
         feature_size: int = 4,
         channels: tuple[int, ...] = (16, 8),
         device: str = 'cpu',
+        layer_name: str | None = None,
     ):
         super().__init__()
         self.P = target_total_params
         self.d = latent_dim
         self.alpha = alpha
+        self.layer_name = layer_name
         self.feature_size = feature_size
         self.channels = channels
 

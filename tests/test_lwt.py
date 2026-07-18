@@ -18,7 +18,7 @@ class TestLWT:
 
         x = torch.randn(8, 1, 28, 28, device=device)
         y = torch.randint(0, 10, (8,), device=device)
-        dataset = TensorDataset(x.cpu(), y.cpu())  # DataLoader 需要 CPU 张量
+        dataset = TensorDataset(x, y)
         loader = DataLoader(dataset, batch_size=8)
 
         layer_generators = {
@@ -50,7 +50,7 @@ class TestLWT:
 
         # 验证每层 z 都已更新，且所有参数在正确设备上
         for name, mapping in trainer.layer_mappings.items():
-            assert not torch.equal(z_before[name].cpu(), mapping.z.data.cpu()), (
+            assert not torch.equal(z_before[name], mapping.z.data), (
                 f'Layer {name} z was not updated!'
             )
             assert next(mapping.parameters()).device.type == device
@@ -58,7 +58,7 @@ class TestLWT:
         # 验证 checkpoint 按新方法打包（含 metadata + state_dict）
         checkpoint_path = os.path.join('/tmp/test_lwt', 'test_lwt_final.pth')
         assert os.path.exists(checkpoint_path)
-        ckpt = torch.load(checkpoint_path, map_location='cpu')
+        ckpt = torch.load(checkpoint_path, map_location=device)
         assert isinstance(ckpt, dict)
         assert 'state_dict' in ckpt
         assert 'target_net' in ckpt
@@ -109,7 +109,7 @@ def test_lwt_per_layer_config(device):
 def make_one_batch_loader(device):
     x = torch.randn(8, 1, 28, 28, device=device)
     y = torch.randint(0, 10, (8,), device=device)
-    return DataLoader(TensorDataset(x.cpu(), y.cpu()), batch_size=8)
+    return DataLoader(TensorDataset(x, y), batch_size=8)
 
 
 def test_lwt_trainer_resume(tmp_path, device):

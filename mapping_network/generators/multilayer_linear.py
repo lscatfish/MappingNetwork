@@ -16,11 +16,13 @@ class MultiLayerLinearMappingNetwork(ParameterGenerator):
         hidden_dim: int = 64,
         num_hidden: int = 1,
         device: str = 'cpu',
+        layer_name: str | None = None,
     ):
         super().__init__()
         self.P = target_total_params
         self.d = latent_dim
         self.alpha = alpha
+        self.layer_name = layer_name
 
         self.z = nn.Parameter(torch.randn(self.d, device=device) * 0.1)
 
