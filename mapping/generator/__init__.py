@@ -4,8 +4,9 @@ from mapping.generator.conv import Conv1d, Conv2d
 from mapping.generator.lrd import LRDLayer
 from mapping.generator.mlp import MLP
 from mapping.generator.resblock import ConvResBlock, LinearResBlock
+from mapping.generator.transformer import TransformerBlock
 
 __all__ = [
     'Block', 'Linear', 'Conv1d', 'Conv2d', 'LRDLayer',
-    'MLP', 'LinearResBlock', 'ConvResBlock',
+    'MLP', 'LinearResBlock', 'ConvResBlock', 'TransformerBlock',
 ]
