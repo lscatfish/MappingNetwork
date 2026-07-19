@@ -120,3 +120,37 @@ class TestGeneratorConv2d:
         from mapping.generator.conv import Conv2d
         layer = Conv2d(3, 16, 3, bias=False).to(device)
         assert layer.bias is None
+
+
+class TestLRDLayer:
+    def test_lrd_reconstructs_shape(self, device):
+        """LRD 重建 weight 形状正确。"""
+        from mapping.generator.lrd import LRDLayer
+
+        m, n, rank = 512, 176, 10
+        lrd = LRDLayer(m, n, rank).to(device)
+
+        # 模拟 generator 输出 flat 张量
+        flat = torch.randn(m * rank + n * rank, device=device)
+
+        U = flat[:m * rank].reshape(m, rank)       # (512, 10)
+        V = flat[m * rank:].reshape(n, rank)        # (176, 10)
+        weight = U @ V.T                             # (512, 176)
+
+        assert weight.shape == (m, n)
+
+    def test_lrd_differentiable(self, device):
+        """LRD 重建 weight 可反向传播。"""
+        from mapping.generator.lrd import LRDLayer
+
+        m, n, rank = 512, 176, 10
+        lrd = LRDLayer(m, n, rank).to(device)
+
+        flat = torch.randn(m * rank + n * rank, device=device, requires_grad=True)
+        U = flat[:m * rank].reshape(m, rank)
+        V = flat[m * rank:].reshape(n, rank)
+        weight = U @ V.T
+        loss = weight.sum()
+        loss.backward()
+
+        assert flat.grad is not None
