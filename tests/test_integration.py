@@ -1,5 +1,4 @@
 import torch
-import pytest
 import torch.nn.functional as F
 from mapping import Generator, Conv2d, Linear, Sequential
 from mapping.generator import Linear as GenLinear, Conv2d as GenConv2d
@@ -141,11 +140,16 @@ class TestIntegrationSLVT:
         net = Sequential(
             Conv2d(1, 20, 5),
             Conv2d(20, 32, 5),
-            Linear(512, 10),
+            torch.nn.Flatten(1),
+            Linear(12800, 10),
             generator_cls=MyGen,
             z_dim=64,
             hidden_dim=128,
         ).to(device)
+
+        x = torch.randn(2, 1, 28, 28, device=device)
+        y = net(x)
+        assert y.shape == (2, 10)
 
         assert net.generator.z.shape == (64,)
         assert net.generator.z.requires_grad
