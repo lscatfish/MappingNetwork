@@ -51,3 +51,31 @@ class Generator(nn.Module, ABC):
                 - bias:   形状为 self.b_shape 的张量，或 1D flat（bias=False 时为 None）
         """
         raise NotImplementedError
+
+
+class MappingLayer(nn.Module):
+    """主干网络层基类。
+
+    子类需实现:
+        - _functional(x, w, b) -> Tensor: 用参数执行函数式前向
+    """
+
+    def _resolve(self, t: torch.Tensor, target_shape: tuple) -> torch.Tensor:
+        """解析张量形状：shaped 直通，flat 则 reshape。"""
+        return t if t.shape == target_shape else t.reshape(target_shape)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """LWT 入口：调用自己的 generator -> _functional。"""
+        w, b = self.generator()
+        return self._functional(x, w, b)
+
+    def forward_with_params(
+        self, x: torch.Tensor, w: torch.Tensor, b: torch.Tensor | None
+    ) -> torch.Tensor:
+        """SLVT 入口：接收外部参数 tuple -> _functional。"""
+        return self._functional(x, w, b)
+
+    def _functional(
+        self, x: torch.Tensor, w: torch.Tensor, b: torch.Tensor | None
+    ) -> torch.Tensor:
+        raise NotImplementedError
