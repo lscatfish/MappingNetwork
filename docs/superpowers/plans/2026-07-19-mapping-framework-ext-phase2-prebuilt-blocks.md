@@ -37,7 +37,7 @@
     - 属性：`self.sizes: list[int]`、`self.layers: nn.ModuleList`
     - `forward(x: torch.Tensor) -> torch.Tensor`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 创建 `tests/test_generator_mlp.py`：
 
@@ -100,12 +100,12 @@ class TestMLP:
         assert x.grad is not None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_mlp.py -v`
 Expected: FAIL，`ImportError: cannot import name 'MLP' from 'mapping.generator'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 3a. 创建 `mapping/generator/mlp.py`：
 
@@ -162,7 +162,7 @@ from mapping.generator.mlp import MLP
 __all__ = ['Block', 'Linear', 'Conv1d', 'Conv2d', 'LRDLayer', 'MLP']
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_mlp.py -v`
 Expected: 7 passed
@@ -170,7 +170,7 @@ Expected: 7 passed
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest`
 Expected: 全量通过（121 + 7 = 128）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/generator/mlp.py mapping/generator/__init__.py tests/test_generator_mlp.py
@@ -192,7 +192,7 @@ git commit -m "feat: add mapping.generator.MLP prebuilt block"
   - `LinearResBlock(dim: int)`：`x + fc2(act(fc1(x)))`，维度不变；属性 `fc1`/`fc2`/`act`
   - `ConvResBlock(channels: int, kernel_size: int = 3)`：`x + conv2(act(conv1(x)))`，`padding = kernel_size // 2`，通道与空间尺寸不变；属性 `conv1`/`conv2`/`act`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 创建 `tests/test_generator_resblock.py`：
 
@@ -287,12 +287,12 @@ class TestConvResBlock:
         assert x.grad is not None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_resblock.py -v`
 Expected: FAIL，`ImportError: cannot import name 'ConvResBlock' from 'mapping.generator'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 3a. 创建 `mapping/generator/resblock.py`：
 
@@ -363,7 +363,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_resblock.py -v`
 Expected: 11 passed
@@ -371,7 +371,7 @@ Expected: 11 passed
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest`
 Expected: 全量通过（128 + 11 = 139）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/generator/resblock.py mapping/generator/__init__.py tests/test_generator_resblock.py
@@ -395,7 +395,7 @@ git commit -m "feat: add generator LinearResBlock and ConvResBlock prebuilt bloc
     - 属性：`norm1`（nn.LayerNorm）、`attn`（nn.MultiheadAttention，batch_first=True）、`norm2`、`ffn`（`MLP([dim, int(dim*mlp_ratio), dim])`）
     - 输入形状 `(B, L, D)`，输出形状不变
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 创建 `tests/test_generator_transformer.py`：
 
@@ -456,12 +456,12 @@ class TestTransformerBlock:
         assert x.grad is not None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_transformer.py -v`
 Expected: FAIL，`ImportError: cannot import name 'TransformerBlock' from 'mapping.generator'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 3a. 创建 `mapping/generator/transformer.py`：
 
@@ -527,7 +527,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_transformer.py -v`
 Expected: 6 passed
@@ -535,7 +535,7 @@ Expected: 6 passed
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest`
 Expected: 全量通过（139 + 6 = 145）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/generator/transformer.py mapping/generator/__init__.py tests/test_generator_transformer.py
