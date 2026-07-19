@@ -47,8 +47,8 @@ Mapping 是一个**纯推理框架**，用于将参数生成网络（Mapping Net
 ├──────────────────────────────────────────────────────────┤
 │ Layer 2: Generator (mapping.Generator)                   │
 │  - 强制声明 z_dim，自动创建 self.z (nn.Parameter)          │
-│  - 接收 param_spec，组合子块构建生成网络                     │
-│  - forward() → dict {'weight': tensor, 'bias': tensor}   │
+│  - 基类自动派生 w_shape/b_shape/w_size/b_size                │
+│  - forward() → tuple (weight, bias)                        │
 ├──────────────────────────────────────────────────────────┤
 │ Layer 1: Generator Sub-blocks (mapping.generator.*)      │
 │  - 固定随机参数，requires_grad=False                       │
@@ -115,29 +115,43 @@ class MyLinear(mapping.generator.Linear):
 class Generator(nn.Module):
     """参数生成网络基类。
 
+    基类自动从 param_spec 派生便利属性，用户无需手动处理 param_spec 字典。
+
     Args:
         param_spec (dict): 目标参数规格，由 MappingLayer 自动传入。
             格式: {'weight': (C_out, C_in, kh, kw), 'bias': (C_out,)}
             当 bias=False 时，不含 'bias' 键。
         z_dim (int): 隐变量 z 的维度，必须显式声明。
         **kwargs: 用户自定义参数（如隐藏层大小等）。
+
+    自动派生属性:
+        self.w_shape  (tuple):  weight 目标形状，如 (20, 1, 5, 5)
+        self.b_shape  (tuple | None): bias 目标形状，如 (20,) 或 None
+        self.w_size   (int):   weight 总元素数，如 500
+        self.b_size   (int):   bias 总元素数，如 20 或 0
     """
 
     def __init__(self, param_spec: dict, z_dim: int, **kwargs):
         super().__init__()
-        self.param_spec = param_spec
         self.z_dim = z_dim
-        self.z = nn.Parameter(torch.randn(z_dim))  # 可训练，用户可直接使用
+        self.z = nn.Parameter(torch.randn(z_dim))  # 可训练
+
+        # 自动派生 — 用户直接使用，无需手动访问 param_spec
+        self.w_shape = param_spec['weight']
+        self.b_shape = param_spec.get('bias')       # bias=False 时为 None
+        self.w_size = prod(self.w_shape)
+        self.b_size = prod(self.b_shape) if self.b_shape else 0
 
     @abstractmethod
-    def forward(self) -> dict:
+    def forward(self) -> tuple:
         """返回生成的参数张量。
 
         Returns:
-            dict: {'weight': tensor, 'bias': tensor}
-                - shaped 模式: tensor 形状已匹配 param_spec
-                - flat 模式: tensor 为 1D，由 MappingLayer 负责 reshape
-                - bias 键在 bias=False 时可不含
+            tuple: (weight, bias)
+                - weight: 形状为 self.w_shape 的张量，或 1D flat
+                - bias:   形状为 self.b_shape 的张量，或 1D flat（bias=False 时为 None）
+                - 默认 shaped：张量已匹配目标形状，MappingLayer 直接使用
+                - flat 模式：1D 张量，MappingLayer 的 _resolve 自动 reshape
         """
         raise NotImplementedError
 ```
@@ -145,8 +159,8 @@ class Generator(nn.Module):
 ### 4.3 关键设计
 
 - **`self.z` 是唯一的可训练参数**（`nn.Parameter`，`requires_grad=True`）
-- `param_spec` 由 MappingLayer 在构造时自动传入，用户无需手动计算
-- 用户在 `forward()` 中自由组合子块，只需最终返回匹配 `param_spec` 的张量
+- 基类自动派生 `w_shape/b_shape/w_size/b_size`，用户编写 generator 时直接用，无需手动访问 `param_spec`
+- `forward()` 返回 tuple `(weight, bias)`，简洁直观
 - **shaped 优先**：默认输出 shaped 张量；flat 模式作为可选支持（`_resolve` 自动处理）
 
 ### 4.4 示例
@@ -155,27 +169,22 @@ class Generator(nn.Module):
 class MyGen(mapping.Generator):
     def __init__(self, param_spec, z_dim=64, hidden_dim=128):
         super().__init__(param_spec, z_dim=z_dim)
-        # 子块组合（固定随机参数）
+        # 基类自动派生 self.w_shape, self.w_size 等，直接用
         self.body = nn.Sequential(
             mapping.generator.Linear(z_dim, hidden_dim),
             nn.ReLU(),
             mapping.generator.Linear(hidden_dim, hidden_dim * 2),
             nn.ReLU(),
         )
-        # weight 和 bias 头部分离
-        w_size = prod(param_spec['weight'])   # 例如: 20*1*5*5=500
-        b_size = prod(param_spec['bias'])     # 例如: 20
-        self.w_head = nn.Linear(hidden_dim * 2, w_size)
-        self.b_head = nn.Linear(hidden_dim * 2, b_size)
+        self.w_head = nn.Linear(hidden_dim * 2, self.w_size)   # self.w_size = 500
+        self.b_head = nn.Linear(hidden_dim * 2, self.b_size)   # self.b_size = 20
 
     def forward(self):
         h = self.body(self.z)
-        return {
-            'weight': self.w_head(h).reshape(self.param_spec['weight']),
-            #        ^ 形状: (C_out, C_in, kh, kw) — 严格匹配 F.conv2d 的 weight 参数
-            'bias':   self.b_head(h).reshape(self.param_spec['bias']),
-            #        ^ 形状: (C_out,) — 严格匹配 F.conv2d 的 bias 参数
-        }
+        return (
+            self.w_head(h).reshape(self.w_shape),  # 形状: (20, 1, 5, 5)
+            self.b_head(h).reshape(self.b_shape),  # 形状: (20,)
+        )
 ```
 
 ---
@@ -206,12 +215,12 @@ class MappingLayer(nn.Module):
 
     def forward(self, x) -> Tensor:
         """LWT 入口：调用自己的 generator → _functional。"""
-        params = self.generator()
-        return self._functional(x, params)
+        w, b = self.generator()
+        return self._functional(x, w, b)
 
-    def forward_with_params(self, x, params: dict) -> Tensor:
-        """SLVT 入口：接收外部参数 dict → _functional。"""
-        return self._functional(x, params)
+    def forward_with_params(self, x, w, b) -> Tensor:
+        """SLVT 入口：接收外部参数 tuple → _functional。"""
+        return self._functional(x, w, b)
 ```
 
 ### 5.3 `mapping.Conv2d`
@@ -230,7 +239,7 @@ class Conv2d(MappingLayer):
         groups       (int): 分组卷积数 (默认 1)
         bias         (bool): 是否使用偏置 (默认 True)
         generator_cls (type[Generator] | None): Generator 子类 (LWT 用)
-        generator_kwargs (dict | None): 透传给 generator 的参数
+        **generator_kwargs: 透传给 generator 构造函数的参数（如 z_dim, hidden_dim 等）
 
     param_spec:
         weight: (C_out, C_in, kh, kw)
@@ -241,7 +250,7 @@ class Conv2d(MappingLayer):
 
     def __init__(self, in_channels, out_channels, kernel_size,
                  stride=1, padding=0, dilation=1, groups=1, bias=True,
-                 generator_cls=None, generator_kwargs=None):
+                 generator_cls=None, **generator_kwargs):
         # 自动推导 kernel_size 为 (kh, kw)
         kh, kw = (kernel_size, kernel_size) if isinstance(kernel_size, int) else kernel_size
 
@@ -254,6 +263,7 @@ class Conv2d(MappingLayer):
             param_spec['bias'] = (out_channels,)
             # 总元素数 = out_channels
 
+        self.param_spec = param_spec
         self.stride = stride
         self.padding = padding
         self.dilation = dilation
@@ -262,12 +272,12 @@ class Conv2d(MappingLayer):
 
         # 实例化 generator
         if generator_cls is not None:
-            kwargs = generator_kwargs or {}
-            self.generator = generator_cls(param_spec, **kwargs)
+            self.generator = generator_cls(param_spec, **generator_kwargs)
 
-    def _functional(self, x, params):
-        w = self._resolve(params['weight'], self.param_spec['weight'])
-        b = self._resolve(params['bias'], self.param_spec['bias']) if self.has_bias and 'bias' in params else None
+    def _functional(self, x, w, b):
+        w = self._resolve(w, self.param_spec['weight'])
+        if self.has_bias and b is not None:
+            b = self._resolve(b, self.param_spec['bias'])
         return F.conv2d(x, w, b, self.stride, self.padding, self.dilation, self.groups)
 ```
 
@@ -282,7 +292,7 @@ class Linear(MappingLayer):
         out_features (int): 输出特征数 N_out
         bias         (bool): 是否使用偏置 (默认 True)
         generator_cls (type[Generator] | None): Generator 子类 (LWT 用)
-        generator_kwargs (dict | None): 透传给 generator 的参数
+        **generator_kwargs: 透传给 generator 构造函数的参数（如 z_dim, hidden_dim 等）
 
     param_spec:
         weight: (N_out, N_in)
@@ -291,9 +301,10 @@ class Linear(MappingLayer):
             总元素数 = N_out  (仅 bias=True 时)
     """
 
-    def _functional(self, x, params):
-        w = self._resolve(params['weight'], self.param_spec['weight'])
-        b = self._resolve(params['bias'], self.param_spec['bias']) if self.has_bias and 'bias' in params else None
+    def _functional(self, x, w, b):
+        w = self._resolve(w, self.param_spec['weight'])
+        if self.has_bias and b is not None:
+            b = self._resolve(b, self.param_spec['bias'])
         return F.linear(x, w, b)
 ```
 
@@ -320,10 +331,10 @@ class Sequential(nn.Module):
     Args:
         *layers: 纯形状 MappingLayer（不能自带 generator），可混装非参数层
         generator_cls: Generator 子类
-        generator_kwargs: 透传给 generator 的参数
+        **generator_kwargs: 透传给 generator 构造函数的参数（如 z_dim, hidden_dim 等）
     """
 
-    def __init__(self, *layers, generator_cls, generator_kwargs=None):
+    def __init__(self, *layers, generator_cls, **generator_kwargs):
         # 1. 验证互斥：不能包含自带 generator 的层
         for l in layers:
             if isinstance(l, MappingLayer) and hasattr(l, 'generator') and l.generator is not None:
@@ -356,11 +367,10 @@ class Sequential(nn.Module):
             'weight': (w_total,),
             'bias': (b_total,) if b_total > 0 else None,
         }
-        kwargs = generator_kwargs or {}
-        self.generator = generator_cls(full_spec, **kwargs)
+        self.generator = generator_cls(full_spec, **generator_kwargs)
 
     def forward(self, x):
-        params = self.generator()  # {'weight': flat_all, 'bias': flat_all}
+        flat_w, flat_b = self.generator()  # tuple (flat_weight, flat_bias)
         param_idx = 0
 
         for l in self.layers:
@@ -368,14 +378,10 @@ class Sequential(nn.Module):
                 ws, we = self.w_bounds[param_idx], self.w_bounds[param_idx + 1]
                 bs, be = self.b_bounds[param_idx], self.b_bounds[param_idx + 1]
 
-                layer_params = {
-                    'weight': params['weight'][ws:we],
-                    # 注意：这是一维 flat 切片，MappingLayer 的 _resolve 会 reshape
-                }
-                if 'bias' in params and be > bs:
-                    layer_params['bias'] = params['bias'][bs:be]
+                w_slice = flat_w[ws:we]      # 一维 flat 切片，_resolve 会 reshape
+                b_slice = flat_b[bs:be] if flat_b is not None and be > bs else None
 
-                x = l.forward_with_params(x, layer_params)
+                x = l.forward_with_params(x, w_slice, b_slice)
                 param_idx += 1
             else:
                 x = l(x)  # 非参数层直接串联
@@ -387,7 +393,7 @@ class Sequential(nn.Module):
 
 - weight 和 bias 沿**两条独立 flat** 分别切片（不合并）
 - 非参数层（`nn.ReLU`, `nn.MaxPool2d`, `nn.Flatten` 等）直接串联，不参与切片
-- 共享 generator 的 `param_spec` 是两条一维 flat：`{'weight': (total_w,), 'bias': (total_b,)}`
+- 共享 generator 的 `param_spec` 是两条一维 flat：`{'weight': (total_w,), 'bias': (total_b,)}`，forward 返回 tuple `(flat_w, flat_b)`
 
 ---
 
@@ -412,7 +418,7 @@ class LRDLayer(nn.Module):
         U = flat_input[:m*rank].reshape(m, rank)
         V = flat_input[m*rank:m*rank+n*rank].reshape(n, rank)
         weight = U @ V.T                        # (m, n) = (512, 176)
-        params = {'weight': weight, 'bias': bias}
+        return weight, bias                     # tuple (weight, bias)
     """
 ```
 
@@ -425,26 +431,10 @@ class LRDLayer(nn.Module):
 ```python
 class MyLWTNet(nn.Module):
     def __init__(self):
-        self.conv1 = mapping.Conv2d(
-            1, 20, 5,
-            generator_cls=MyGen,
-            generator_kwargs={'z_dim': 64, 'hidden_dim': 128},
-        )
-        self.conv2 = mapping.Conv2d(
-            20, 32, 5,
-            generator_cls=MyGen,
-            generator_kwargs={'z_dim': 64, 'hidden_dim': 128},
-        )
-        self.fc1 = mapping.Linear(
-            512, 176,
-            generator_cls=MyGen,
-            generator_kwargs={'z_dim': 64, 'hidden_dim': 128},
-        )
-        self.fc2 = mapping.Linear(
-            176, 10,
-            generator_cls=MyGen,
-            generator_kwargs={'z_dim': 64, 'hidden_dim': 128},
-        )
+        self.conv1 = mapping.Conv2d(1, 20, 5, generator_cls=MyGen, z_dim=64, hidden_dim=128)
+        self.conv2 = mapping.Conv2d(20, 32, 5, generator_cls=MyGen, z_dim=64, hidden_dim=128)
+        self.fc1   = mapping.Linear(512, 176, generator_cls=MyGen, z_dim=64, hidden_dim=128)
+        self.fc2   = mapping.Linear(176, 10, generator_cls=MyGen, z_dim=64, hidden_dim=128)
 
     def forward(self, x):
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
@@ -468,7 +458,7 @@ net = mapping.Sequential(
     nn.ReLU(),
     mapping.Linear(176, 10),
     generator_cls=MyGen,
-    generator_kwargs={'z_dim': 64, 'hidden_dim': 256},
+    z_dim=64, hidden_dim=256,      # 直接透传给 generator
 )
 y = net(x)
 ```
