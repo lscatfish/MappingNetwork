@@ -39,6 +39,10 @@ class ConvResBlock(Block):
 
     def __init__(self, channels: int, kernel_size: int = 3):
         super().__init__()
+        if kernel_size % 2 == 0:
+            raise ValueError(
+                f'ConvResBlock 只支持奇数 kernel_size（保证空间尺寸不变），得到 {kernel_size}'
+            )
         padding = kernel_size // 2
         self.conv1 = Conv2d(channels, channels, kernel_size, padding=padding)
         self.conv2 = Conv2d(channels, channels, kernel_size, padding=padding)

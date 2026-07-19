@@ -63,6 +63,13 @@ class TestConvResBlock:
         x = torch.randn(2, 8, 10, 10, device=device)
         assert block(x).shape == (2, 8, 10, 10)
 
+    def test_even_kernel_size_raises(self, device):
+        """偶数 kernel_size 无法保持空间尺寸，构造时报 ValueError。"""
+        import pytest
+
+        with pytest.raises(ValueError):
+            ConvResBlock(8, kernel_size=4)
+
     def test_forward_matches_manual(self, device):
         block = ConvResBlock(8).to(device)
         x = torch.randn(2, 8, 10, 10, device=device)

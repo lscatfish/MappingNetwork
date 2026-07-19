@@ -15,7 +15,7 @@ class MLP(Block):
 
     Args:
         sizes: 各层尺寸，如 [z_dim, 128, 256, out_dim]，至少 2 个
-        act: 激活模块类（默认 nn.ReLU）
+        act: 可无参构造的激活模块类，如 nn.ReLU、nn.GELU、nn.LeakyReLU（默认 nn.ReLU）
     """
 
     def __init__(
