@@ -30,7 +30,7 @@
 - Consumes: nothing
 - Produces: `mapping` package structure, empty `__init__.py` files
 
-- [ ] **Step 1: 创建目录和文件**
+- [x] **Step 1: 创建目录和文件**
 
 ```bash
 mkdir -p /root/MyProj/MappingNetwork/mapping/generator
@@ -44,7 +44,7 @@ mkdir -p /root/MyProj/MappingNetwork/mapping/generator
 # mapping/generator/__init__.py (空文件)
 ```
 
-- [ ] **Step 2: 提交**
+- [x] **Step 2: 提交**
 
 ```bash
 git add mapping/
@@ -63,7 +63,7 @@ git commit -m "chore: scaffold mapping/ package structure"
 - Consumes: nothing
 - Produces: `mapping.generator.Linear(in_features, out_features, bias=True)` — init 对齐 `nn.Linear`，内部参数 `requires_grad=False`，默认论文初始化
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 # tests/test_generator_blocks.py
@@ -127,14 +127,14 @@ class TestGeneratorLinear:
         assert x.grad is not None
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestGeneratorLinear -v
 ```
 Expected: ImportError (module not found)
 
-- [ ] **Step 3: 实现 `mapping/generator/linear.py`**
+- [x] **Step 3: 实现 `mapping/generator/linear.py`**
 
 ```python
 """固定随机参数 Linear 子块。"""
@@ -192,14 +192,14 @@ class Linear(nn.Module):
         return f'in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}'
 ```
 
-- [ ] **Step 4: 运行测试验证通过**
+- [x] **Step 4: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestGeneratorLinear -v
 ```
 Expected: 7 passed
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mapping/generator/linear.py tests/test_generator_blocks.py
@@ -220,7 +220,7 @@ git commit -m "feat: add mapping.generator.Linear — frozen random param sub-bl
   - `mapping.generator.Conv1d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True)`
   - `mapping.generator.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True)`
 
-- [ ] **Step 1: 追加测试用例**
+- [x] **Step 1: 追加测试用例**
 
 ```python
 # 追加到 tests/test_generator_blocks.py
@@ -290,14 +290,14 @@ class TestGeneratorConv2d:
         assert layer.bias is None
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestGeneratorConv1d tests/test_generator_blocks.py::TestGeneratorConv2d -v
 ```
 Expected: ImportError
 
-- [ ] **Step 3: 实现 `mapping/generator/conv.py`**
+- [x] **Step 3: 实现 `mapping/generator/conv.py`**
 
 ```python
 """固定随机参数 Conv1d / Conv2d 子块。"""
@@ -439,14 +439,14 @@ class Conv2d(_ConvNd):
         )
 ```
 
-- [ ] **Step 4: 运行测试验证通过**
+- [x] **Step 4: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestGeneratorConv1d tests/test_generator_blocks.py::TestGeneratorConv2d -v
 ```
 Expected: 9 passed
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mapping/generator/conv.py tests/test_generator_blocks.py
@@ -465,7 +465,7 @@ git commit -m "feat: add mapping.generator.Conv1d and Conv2d sub-blocks"
 - Consumes: nothing
 - Produces: `mapping.generator.LRDLayer(m, n, rank)` — 低秩分解辅助模块，在 generator.forward 中调用
 
-- [ ] **Step 1: 追加测试用例**
+- [x] **Step 1: 追加测试用例**
 
 ```python
 # 追加到 tests/test_generator_blocks.py
@@ -505,14 +505,14 @@ class TestLRDLayer:
         assert flat.grad is not None
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestLRDLayer -v
 ```
 Expected: ImportError
 
-- [ ] **Step 3: 实现 `mapping/generator/lrd.py`**
+- [x] **Step 3: 实现 `mapping/generator/lrd.py`**
 
 ```python
 """低秩分解 (LRD) 辅助模块。"""
@@ -568,14 +568,14 @@ class LRDLayer(nn.Module):
         return f'm={self.m}, n={self.n}, rank={self.rank}'
 ```
 
-- [ ] **Step 4: 运行测试验证通过**
+- [x] **Step 4: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py::TestLRDLayer -v
 ```
 Expected: 2 passed
 
-- [ ] **Step 5: 更新 `mapping/generator/__init__.py` 导出**
+- [x] **Step 5: 更新 `mapping/generator/__init__.py` 导出**
 
 ```python
 from mapping.generator.linear import Linear
@@ -585,7 +585,7 @@ from mapping.generator.lrd import LRDLayer
 __all__ = ['Linear', 'Conv1d', 'Conv2d', 'LRDLayer']
 ```
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add mapping/generator/lrd.py mapping/generator/__init__.py tests/test_generator_blocks.py
@@ -605,7 +605,7 @@ git commit -m "feat: add mapping.generator.LRDLayer and generator __init__ expor
 - Produces:
   - `mapping.Generator(param_spec, z_dim, **kwargs)` — 基类，自动派生 `self.w_shape/b_shape/w_size/b_size`，`forward() -> tuple`
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 # tests/test_generator.py
@@ -741,14 +741,14 @@ class TestGenerator:
         assert not torch.allclose(gen.z.grad, torch.zeros_like(gen.z.grad))
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator.py::TestGenerator -v
 ```
 Expected: ImportError
 
-- [ ] **Step 3: 实现 `mapping/base.py` 中的 Generator**
+- [x] **Step 3: 实现 `mapping/base.py` 中的 Generator**
 
 ```python
 """Mapping 框架基类：Generator 和 MappingLayer。"""
@@ -806,14 +806,14 @@ class Generator(nn.Module):
         raise NotImplementedError
 ```
 
-- [ ] **Step 4: 运行测试验证通过**
+- [x] **Step 4: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator.py::TestGenerator -v
 ```
 Expected: 7 passed
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mapping/base.py tests/test_generator.py
@@ -836,7 +836,7 @@ git commit -m "feat: add mapping.Generator base class with auto-derived attrs"
   - `mapping.Conv2d(in_channels, out_channels, kernel_size, ..., generator_cls=None, **generator_kwargs)`
   - `mapping.Linear(in_features, out_features, bias=True, generator_cls=None, **generator_kwargs)`
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 # tests/test_layers.py
@@ -975,14 +975,14 @@ class TestLinear:
         assert torch.allclose(y, expected)
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_layers.py -v
 ```
 Expected: ImportError
 
-- [ ] **Step 3: 追加 MappingLayer 到 `mapping/base.py`**
+- [x] **Step 3: 追加 MappingLayer 到 `mapping/base.py`**
 
 ```python
 # 追加到 mapping/base.py 末尾
@@ -1016,7 +1016,7 @@ class MappingLayer(nn.Module):
         raise NotImplementedError
 ```
 
-- [ ] **Step 4: 实现 `mapping/layers.py`**
+- [x] **Step 4: 实现 `mapping/layers.py`**
 
 ```python
 """Mapping 主干网络层：Conv2d, Linear。"""
@@ -1142,14 +1142,14 @@ class Linear(MappingLayer):
         return F.linear(x, w, b)
 ```
 
-- [ ] **Step 5: 运行测试验证通过**
+- [x] **Step 5: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_layers.py -v
 ```
 Expected: 12 passed
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add mapping/base.py mapping/layers.py tests/test_layers.py
@@ -1168,7 +1168,7 @@ git commit -m "feat: add MappingLayer base, mapping.Conv2d and mapping.Linear"
 - Consumes: `mapping.MappingLayer`, `mapping.Generator` (from Tasks 5-6)
 - Produces: `mapping.Sequential(*layers, generator_cls, **generator_kwargs)`
 
-- [ ] **Step 1: 编写失败测试**
+- [x] **Step 1: 编写失败测试**
 
 ```python
 # tests/test_sequential.py
@@ -1276,14 +1276,14 @@ class TestSequential:
         assert net.generator.my_param == 99
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_sequential.py -v
 ```
 Expected: ImportError
 
-- [ ] **Step 3: 实现 `mapping/sequential.py`**
+- [x] **Step 3: 实现 `mapping/sequential.py`**
 
 ```python
 """SLVT 模式的共享 generator 容器。"""
@@ -1367,14 +1367,14 @@ class Sequential(nn.Module):
         return x
 ```
 
-- [ ] **Step 4: 运行测试验证通过**
+- [x] **Step 4: 运行测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_sequential.py -v
 ```
 Expected: 5 passed
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add mapping/sequential.py tests/test_sequential.py
@@ -1393,7 +1393,7 @@ git commit -m "feat: add mapping.Sequential — SLVT shared-generator container"
 - Consumes: all previous tasks
 - Produces: clean public API via `mapping/__init__.py`
 
-- [ ] **Step 1: 编写集成测试**
+- [x] **Step 1: 编写集成测试**
 
 ```python
 # tests/test_integration.py
@@ -1555,14 +1555,14 @@ class TestFlatKerasStyle:
         assert y.shape == (2, 10)
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_integration.py -v
 ```
 Expected: ImportError (mapping.__init__ not yet complete)
 
-- [ ] **Step 3: 更新 `mapping/__init__.py` 导出**
+- [x] **Step 3: 更新 `mapping/__init__.py` 导出**
 
 ```python
 """Mapping 推理框架 — 参数生成 + 主干网络的前向推理框架。"""
@@ -1580,21 +1580,21 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: 运行集成测试验证通过**
+- [x] **Step 4: 运行集成测试验证通过**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_integration.py -v
 ```
 Expected: 6 passed
 
-- [ ] **Step 5: 运行全部测试**
+- [x] **Step 5: 运行全部测试**
 
 ```bash
 /root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_blocks.py tests/test_generator.py tests/test_layers.py tests/test_sequential.py tests/test_integration.py -v
 ```
 Expected: all pass
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add mapping/__init__.py tests/test_integration.py
