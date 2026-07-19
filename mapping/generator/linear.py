@@ -4,13 +4,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mapping.generator.block import Block
 
-class Linear(nn.Module):
+
+class Linear(Block):
     """固定随机参数的线性层子块。
 
     init 签名对齐 torch.nn.Linear。内部参数在构造时随机初始化
-    并设为 requires_grad=False。默认采用论文方法初始化，
-    用户可重载 init_weights() 自定义。
+    并设为 requires_grad=False（由 Block 元类自动完成）。
+    默认采用论文方法初始化，用户可重载 init_weights() 自定义。
 
     Args:
         in_features: 输入特征数
@@ -23,19 +25,14 @@ class Linear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
 
-        self.weight = nn.Parameter(
-            torch.empty(out_features, in_features), requires_grad=False
-        )
+        self.weight = nn.Parameter(torch.empty(out_features, in_features))
         if bias:
-            self.bias = nn.Parameter(
-                torch.empty(out_features), requires_grad=False
-            )
+            self.bias = nn.Parameter(torch.empty(out_features))
         else:
             self.register_parameter('bias', None)
+        # init_weights() 与参数冻结由 Block 元类在构造结束后自动完成
 
-        self.init_weights()
-
-    def init_weights(self):
+    def init_weights(self) -> None:
         """默认论文初始化方法：kaiming uniform。
 
         子类可重载此方法自定义初始化。

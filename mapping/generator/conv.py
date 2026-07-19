@@ -4,14 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mapping.generator.block import Block
 
-class _ConvNd(nn.Module):
+
+class _ConvNd(Block):
     """Conv 子块基类，共享 init_weights 逻辑。"""
 
-    def __init__(self):
-        super().__init__()
-
-    def init_weights(self):
+    def init_weights(self) -> None:
         """默认论文初始化方法：kaiming uniform。
 
         子类可重载此方法自定义初始化。
@@ -29,7 +28,7 @@ class Conv1d(_ConvNd):
     """固定随机参数的一维卷积子块。
 
     init 签名对齐 torch.nn.Conv1d。内部参数在构造时随机初始化
-    并设为 requires_grad=False。
+    并设为 requires_grad=False（由 Block 元类自动完成）。
 
     Args:
         in_channels: 输入通道数
@@ -63,15 +62,13 @@ class Conv1d(_ConvNd):
         self.groups = groups
 
         self.weight = nn.Parameter(
-            torch.empty(out_channels, in_channels // groups, *self.kernel_size),
-            requires_grad=False,
+            torch.empty(out_channels, in_channels // groups, *self.kernel_size)
         )
         if bias:
-            self.bias = nn.Parameter(torch.empty(out_channels), requires_grad=False)
+            self.bias = nn.Parameter(torch.empty(out_channels))
         else:
             self.register_parameter('bias', None)
-
-        self.init_weights()
+        # init_weights() 与参数冻结由 Block 元类在构造结束后自动完成
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return F.conv1d(
@@ -84,7 +81,7 @@ class Conv2d(_ConvNd):
     """固定随机参数的二维卷积子块。
 
     init 签名对齐 torch.nn.Conv2d。内部参数在构造时随机初始化
-    并设为 requires_grad=False。
+    并设为 requires_grad=False（由 Block 元类自动完成）。
 
     Args:
         in_channels: 输入通道数
@@ -120,15 +117,13 @@ class Conv2d(_ConvNd):
         self.groups = groups
 
         self.weight = nn.Parameter(
-            torch.empty(out_channels, in_channels // groups, *self.kernel_size),
-            requires_grad=False,
+            torch.empty(out_channels, in_channels // groups, *self.kernel_size)
         )
         if bias:
-            self.bias = nn.Parameter(torch.empty(out_channels), requires_grad=False)
+            self.bias = nn.Parameter(torch.empty(out_channels))
         else:
             self.register_parameter('bias', None)
-
-        self.init_weights()
+        # init_weights() 与参数冻结由 Block 元类在构造结束后自动完成
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return F.conv2d(
