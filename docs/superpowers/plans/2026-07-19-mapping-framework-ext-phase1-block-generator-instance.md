@@ -33,7 +33,7 @@
     - `_freeze(self) -> None`：递归冻结全部参数（`requires_grad_(False)`）
   - 元类行为：实例 `__init__` 结束后自动依次调用 `init_weights()` → `_freeze()`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 创建 `tests/test_generator_block.py`：
 
@@ -124,12 +124,12 @@ class TestBlock:
         assert y.shape == (2, 8)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_block.py -v`
 Expected: FAIL，`ModuleNotFoundError: No module named 'mapping.generator.block'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 创建 `mapping/generator/block.py`：
 
@@ -170,12 +170,12 @@ class Block(nn.Module, metaclass=_BlockMeta):
             p.requires_grad_(False)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_block.py -v`
 Expected: 5 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/generator/block.py tests/test_generator_block.py
@@ -199,7 +199,7 @@ git commit -m "feat: add mapping.generator.Block composable base with metaclass 
   - `generator.Linear` / `generator.Conv1d` / `generator.Conv2d`：签名与行为不变，成为 `Block` 子类；参数创建后由元类统一 init + freeze
   - `mapping.generator.__init__` 新增导出 `Block`（`__all__ = ['Block', 'Linear', 'Conv1d', 'Conv2d', 'LRDLayer']`）
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `tests/test_generator_block.py` 末尾追加：
 
@@ -266,12 +266,12 @@ class TestLeafBlocksAreBlocks:
 
 （文件顶部已 import torch / nn / Block，注意追加处需要的 `import torch.nn as nn` 已在文件顶部存在则复用。）
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_block.py -v`
 Expected: 新增的 4 个测试 FAIL（`ImportError: cannot import name 'Block' from 'mapping.generator'` 或 isinstance 断言失败）
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 3a. 重写 `mapping/generator/linear.py`：
 
@@ -476,7 +476,7 @@ from mapping.generator.lrd import LRDLayer
 __all__ = ['Block', 'Linear', 'Conv1d', 'Conv2d', 'LRDLayer']
 ```
 
-- [ ] **Step 4: Run tests to verify they pass（新增 + 既有全量）**
+- [x] **Step 4: Run tests to verify they pass（新增 + 既有全量）**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_generator_block.py tests/test_generator_blocks.py -v`
 Expected: 全部通过（新增 9 个 + 既有全部）
@@ -484,7 +484,7 @@ Expected: 全部通过（新增 9 个 + 既有全部）
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest`
 Expected: 全量通过（含 test_integration.py 中对 GenLinear 的使用）
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/generator/linear.py mapping/generator/conv.py mapping/generator/__init__.py tests/test_generator_block.py
@@ -512,7 +512,7 @@ git commit -m "refactor: make generator Linear/Conv1d/Conv2d subclasses of Block
   - `Linear(..., generator_cls=None, generator_instance=None, **generator_kwargs)`
   - 语义 = 权重捆绑：挂同一实例的层获得完全相同的 `(weight, bias)`；`mapping.Sequential` 现有检查（层自带 generator 则报错）自动覆盖该情形
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `tests/test_layers.py` 末尾追加（文件顶部需补充 `import pytest`）：
 
@@ -569,12 +569,12 @@ class TestGeneratorInstance:
 
 注意：`SimpleGen` 复用 `tests/test_layers.py` 文件顶部已定义的类（`__init__(self, param_spec, z_dim=32, **kwargs)`）。
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_layers.py::TestGeneratorInstance -v`
 Expected: FAIL（`TypeError: __init__() got an unexpected keyword argument 'generator_instance'`）
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 3a. `mapping/base.py`：在 `MappingLayer` 类中（`_resolve` 方法之前）新增：
 
@@ -661,7 +661,7 @@ docstring Args 中 `generator_cls` 行之后补充：
 
 3c. `mapping/layers.py` `Linear.__init__` 同样修改：签名在 `generator_cls` 后加 `generator_instance: Generator | None = None`，尾部同样替换为 `self._set_generator(generator_cls, generator_instance, generator_kwargs)`，docstring 同样补充。
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest tests/test_layers.py -v`
 Expected: 全部通过（新增 6 个 + 既有全部）
@@ -669,7 +669,7 @@ Expected: 全部通过（新增 6 个 + 既有全部）
 Run: `/root/MyProj/MappingNetwork/.venv/bin/python -m pytest`
 Expected: 全量通过
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mapping/base.py mapping/layers.py tests/test_layers.py
