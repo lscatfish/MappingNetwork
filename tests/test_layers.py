@@ -1,5 +1,4 @@
 import torch
-import pytest
 import torch.nn.functional as F
 from mapping.base import Generator, MappingLayer
 from mapping.layers import Conv2d, Linear

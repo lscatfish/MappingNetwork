@@ -1,5 +1,4 @@
 import torch
-import pytest
 from mapping.generator.linear import Linear
 
 
@@ -133,9 +132,7 @@ class TestLRDLayer:
         # 模拟 generator 输出 flat 张量
         flat = torch.randn(m * rank + n * rank, device=device)
 
-        U = flat[:m * rank].reshape(m, rank)       # (512, 10)
-        V = flat[m * rank:].reshape(n, rank)        # (176, 10)
-        weight = U @ V.T                             # (512, 176)
+        weight = lrd(flat)
 
         assert weight.shape == (m, n)
 
@@ -147,9 +144,7 @@ class TestLRDLayer:
         lrd = LRDLayer(m, n, rank).to(device)
 
         flat = torch.randn(m * rank + n * rank, device=device, requires_grad=True)
-        U = flat[:m * rank].reshape(m, rank)
-        V = flat[m * rank:].reshape(n, rank)
-        weight = U @ V.T
+        weight = lrd(flat)
         loss = weight.sum()
         loss.backward()
 
