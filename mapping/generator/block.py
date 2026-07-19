@@ -23,6 +23,10 @@ class Block(nn.Module, metaclass=_BlockMeta):
 
     子类可重载 init_weights() 自定义初始化；默认为 no-op
     （组合块不重新初始化已就位的子块）。
+
+    注意事项:
+        - __init__ 结束之后动态添加的参数不会被自动冻结
+        - 与使用其他元类的基类（如 ABC）做多重继承会抛元类冲突 TypeError
     """
 
     def init_weights(self) -> None:

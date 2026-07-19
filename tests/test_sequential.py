@@ -63,6 +63,13 @@ class TestSequential:
                 z_dim=64,
             )
 
+    def test_rejects_generator_instance_layer(self, device):
+        """Sequential 拒绝自带 generator_instance 的层。"""
+        gen = SimpleGen({'weight': (4, 3), 'bias': (4,)}, z_dim=8).to(device)
+        layer = Linear(3, 4, generator_instance=gen)
+        with pytest.raises(ValueError):
+            Sequential(layer, generator_cls=SimpleGen, z_dim=8)
+
     def test_gradient_flows(self, device):
         """梯度通过共享 generator 流向 z。"""
         # Conv2d(1,20,5)->(2,20,24,24), Flatten->(2,11520), Linear(11520,10)->(2,10)

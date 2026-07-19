@@ -79,6 +79,10 @@ class MappingLayer(nn.Module):
                 'generator_cls 与 generator_instance 互斥，只能传其中一个'
             )
         if generator_instance is not None:
+            if generator_kwargs:
+                raise ValueError(
+                    'generator_instance 与 generator_kwargs 不能同时使用（如 z_dim）'
+                )
             if not isinstance(generator_instance, Generator):
                 raise TypeError(
                     f'generator_instance 必须是 Generator 实例，'

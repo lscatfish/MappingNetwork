@@ -123,7 +123,6 @@ class TestLeafBlocksAreBlocks:
 
     def test_residual_block_with_generator_subblocks(self, device):
         """用 generator 子块组合残差块：无需手动 freeze/init。"""
-        import torch.nn as nn
         from mapping.generator import Block, Conv2d
 
         class ConvResBlock(Block):

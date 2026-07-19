@@ -169,6 +169,12 @@ class TestGeneratorInstance:
         with pytest.raises(ValueError):
             Linear(3, 4, generator_cls=SimpleGen, generator_instance=gen, z_dim=8)
 
+    def test_instance_with_kwargs_raises(self, device):
+        """generator_instance 与额外 generator_kwargs 同传时报 ValueError。"""
+        gen = SimpleGen({'weight': (4, 3), 'bias': (4,)}, z_dim=8).to(device)
+        with pytest.raises(ValueError):
+            Linear(3, 4, generator_instance=gen, z_dim=8)
+
     def test_non_generator_instance_raises(self, device):
         """传入非 Generator 实例时报 TypeError。"""
         with pytest.raises(TypeError):
