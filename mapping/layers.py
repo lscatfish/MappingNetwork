@@ -22,6 +22,8 @@ class Conv2d(MappingLayer):
         groups       (int): 分组卷积数 (默认 1)
         bias         (bool): 是否使用偏置 (默认 True)
         generator_cls (type[Generator] | None): Generator 子类 (LWT 用)
+        generator_instance (Generator | None): 已实例化的 Generator（权重捆绑用），
+            与 generator_cls 互斥；param_spec 必须与层推导一致
         **generator_kwargs: 透传给 generator 构造函数的参数
 
     param_spec:
@@ -42,6 +44,7 @@ class Conv2d(MappingLayer):
         groups: int = 1,
         bias: bool = True,
         generator_cls: type[Generator] | None = None,
+        generator_instance: Generator | None = None,
         **generator_kwargs,
     ):
         super().__init__()
@@ -59,8 +62,7 @@ class Conv2d(MappingLayer):
         self.groups = groups
         self.has_bias = bias
 
-        if generator_cls is not None:
-            self.generator = generator_cls(self.param_spec, **generator_kwargs)
+        self._set_generator(generator_cls, generator_instance, generator_kwargs)
 
     def _functional(
         self, x: torch.Tensor, w: torch.Tensor, b: torch.Tensor | None
@@ -83,6 +85,8 @@ class Linear(MappingLayer):
         out_features (int): 输出特征数 N_out
         bias         (bool): 是否使用偏置 (默认 True)
         generator_cls (type[Generator] | None): Generator 子类 (LWT 用)
+        generator_instance (Generator | None): 已实例化的 Generator（权重捆绑用），
+            与 generator_cls 互斥；param_spec 必须与层推导一致
         **generator_kwargs: 透传给 generator 构造函数的参数
 
     param_spec:
@@ -98,6 +102,7 @@ class Linear(MappingLayer):
         out_features: int,
         bias: bool = True,
         generator_cls: type[Generator] | None = None,
+        generator_instance: Generator | None = None,
         **generator_kwargs,
     ):
         super().__init__()
@@ -109,8 +114,7 @@ class Linear(MappingLayer):
         self.out_features = out_features
         self.has_bias = bias
 
-        if generator_cls is not None:
-            self.generator = generator_cls(self.param_spec, **generator_kwargs)
+        self._set_generator(generator_cls, generator_instance, generator_kwargs)
 
     def _functional(
         self, x: torch.Tensor, w: torch.Tensor, b: torch.Tensor | None

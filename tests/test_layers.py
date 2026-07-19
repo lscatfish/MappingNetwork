@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn.functional as F
 from mapping.base import Generator, MappingLayer
@@ -130,3 +131,53 @@ class TestLinear:
         y = layer.forward_with_params(x, w, None)
         expected = F.linear(x, w)
         assert torch.allclose(y, expected)
+
+
+class TestGeneratorInstance:
+    def test_weight_tying_shared_instance(self, device):
+        """两层挂同一 generator 实例：输出参数完全相同（权重捆绑）。"""
+        spec = {'weight': (4, 3), 'bias': (4,)}
+        gen = SimpleGen(spec, z_dim=8).to(device)
+        l1 = Linear(3, 4, generator_instance=gen).to(device)
+        l2 = Linear(3, 4, generator_instance=gen).to(device)
+
+        assert l1.generator is gen
+        assert l2.generator is gen
+
+        x = torch.randn(2, 3, device=device)
+        w1, b1 = l1.generator()
+        w2, b2 = l2.generator()
+        assert torch.equal(w1, w2)
+        assert torch.equal(b1, b2)
+        assert l1(x).shape == (2, 4)
+
+    def test_param_spec_mismatch_raises(self, device):
+        """generator_instance 的 param_spec 与层不一致时报 ValueError。"""
+        gen = SimpleGen({'weight': (5, 3), 'bias': (5,)}, z_dim=8).to(device)
+        with pytest.raises(ValueError):
+            Linear(3, 4, generator_instance=gen)
+
+    def test_bias_mismatch_raises(self, device):
+        """无 bias 的 instance 传给有 bias 的层时报 ValueError。"""
+        gen = SimpleGen({'weight': (4, 3)}, z_dim=8).to(device)
+        with pytest.raises(ValueError):
+            Linear(3, 4, bias=True, generator_instance=gen)
+
+    def test_mutual_exclusion_raises(self, device):
+        """generator_cls 与 generator_instance 同传时报 ValueError。"""
+        gen = SimpleGen({'weight': (4, 3), 'bias': (4,)}, z_dim=8).to(device)
+        with pytest.raises(ValueError):
+            Linear(3, 4, generator_cls=SimpleGen, generator_instance=gen, z_dim=8)
+
+    def test_non_generator_instance_raises(self, device):
+        """传入非 Generator 实例时报 TypeError。"""
+        with pytest.raises(TypeError):
+            Linear(3, 4, generator_instance=torch.nn.Linear(3, 4))
+
+    def test_conv2d_generator_instance(self, device):
+        """Conv2d 同样支持 generator_instance。"""
+        spec = {'weight': (16, 3, 3, 3), 'bias': (16,)}
+        gen = SimpleGen(spec, z_dim=8).to(device)
+        layer = Conv2d(3, 16, 3, generator_instance=gen).to(device)
+        x = torch.randn(2, 3, 10, 10, device=device)
+        assert layer(x).shape == (2, 16, 8, 8)
