@@ -35,3 +35,4 @@ checkpoints/
 # Logs / verification outputs
 train_verify.txt
 mapping_networks_full.txt
+.qoder/
