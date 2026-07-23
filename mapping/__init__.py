@@ -3,6 +3,7 @@
 from mapping.base import Generator, MappingLayer
 from mapping.generator.lrd import LRDLayer
 from mapping.layers import BatchNorm1d, BatchNorm2d, Conv1d, Conv2d, ConvTranspose2d, Linear
+from mapping.loss import MappingLoss
 from mapping.resblock import ResBlock
 from mapping.sequential import Sequential
 
@@ -16,6 +17,7 @@ __all__ = [
     'BatchNorm1d',
     'BatchNorm2d',
     'Linear',
+    'MappingLoss',
     'ResBlock',
     'Sequential',
 ]
